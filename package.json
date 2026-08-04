@@ -1,0 +1,67 @@
+{
+  "name": "embroidery-converter",
+  "version": "1.0.0",
+  "description": "Cross-platform desktop app to convert embroidery stitch files between formats using pyembroidery.",
+  "author": "Embroidery Converter",
+  "license": "MIT",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win",
+    "build:mac": "electron-builder --mac",
+    "build:all": "electron-builder -mw",
+    "python:bundle": "pyinstaller --onefile --distpath ./pybuild/dist --workpath ./pybuild/build --specpath ./pybuild --name convert scripts/convert.py"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.embroideryconverter.app",
+    "productName": "Embroidery Converter",
+    "directories": {
+      "output": "release",
+      "buildResources": "assets"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*",
+      "assets/**/*",
+      "!**/*.md",
+      "!pybuild/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "scripts",
+        "to": "scripts",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "pybuild/dist",
+        "to": "pybin",
+        "filter": ["**/*"]
+      }
+    ],
+    "win": {
+      "target": ["nsis"],
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "mac": {
+      "target": ["dmg"],
+      "icon": "assets/icon.icns",
+      "category": "public.app-category.graphics-design"
+    },
+    "dmg": {
+      "title": "Embroidery Converter"
+    }
+  }
+}

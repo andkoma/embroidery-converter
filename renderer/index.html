@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;" />
+  <title>Embroidery Converter</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app">
+    <!-- Header -->
+    <header class="topbar">
+      <div class="brand">
+        <div class="logo" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 12c4-6 12-6 16 0"/>
+            <path d="M4 12c4 6 12 6 16 0"/>
+            <circle cx="4" cy="12" r="1.4" fill="currentColor" stroke="none"/>
+            <circle cx="20" cy="12" r="1.4" fill="currentColor" stroke="none"/>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <h1>Embroidery Converter</h1>
+          <span class="subtitle">Convert stitch files between machine formats</span>
+        </div>
+      </div>
+      <div class="backend-badge" id="backendBadge" title="Backend status">
+        <span class="dot"></span><span id="backendLabel">Checking backend…</span>
+      </div>
+    </header>
+
+    <!-- Main -->
+    <main class="content">
+      <!-- Left column: drop zone + file list -->
+      <section class="left">
+        <div id="dropZone" class="dropzone" tabindex="0">
+          <div class="dropzone-inner">
+            <svg class="drop-icon" viewBox="0 0 24 24" width="54" height="54" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 16V4"/>
+              <path d="M7 9l5-5 5 5"/>
+              <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>
+            </svg>
+            <p class="drop-title">Drag &amp; drop embroidery files here</p>
+            <p class="drop-sub">or <button id="browseBtn" class="link-btn" type="button">browse files</button></p>
+            <p class="drop-formats">DST · PES · JEF · VP3 · HUS · XXX · EXP · SEW · U01 · and more</p>
+          </div>
+        </div>
+
+        <div class="filelist-header">
+          <h2>Files <span id="fileCount" class="count">0</span></h2>
+          <button id="clearBtn" class="ghost-btn" type="button">Clear all</button>
+        </div>
+        <ul id="fileList" class="filelist"></ul>
+        <div id="emptyState" class="empty-state">No files added yet.</div>
+      </section>
+
+      <!-- Right column: options -->
+      <aside class="right">
+        <div class="panel">
+          <h3 class="panel-title">Output format</h3>
+          <select id="outputFormat" class="select"></select>
+          <p id="formatDesc" class="format-desc"></p>
+        </div>
+
+        <div class="panel">
+          <h3 class="panel-title">Resize &amp; resample</h3>
+          <div class="row two">
+            <label class="field">
+              <span>Width (mm)</span>
+              <input id="widthMm" class="input" type="number" min="1" step="0.1" placeholder="auto" />
+            </label>
+            <label class="field">
+              <span>Height (mm)</span>
+              <input id="heightMm" class="input" type="number" min="1" step="0.1" placeholder="auto" />
+            </label>
+          </div>
+          <label class="check">
+            <input id="lockAspect" type="checkbox" checked />
+            <span>Lock aspect ratio</span>
+          </label>
+          <label class="check">
+            <input id="resample" type="checkbox" />
+            <span>Resample stitches <small>(keep stitch density when resizing)</small></span>
+          </label>
+          <button id="resetSize" class="ghost-btn small" type="button">Reset to original size</button>
+        </div>
+
+        <div class="panel" id="colorPanel">
+          <h3 class="panel-title">Colors</h3>
+          <label class="check">
+            <input id="limitColorsToggle" type="checkbox" />
+            <span>Limit color count</span>
+          </label>
+          <label class="field inline" id="colorLimitField">
+            <span>Max colors</span>
+            <input id="colorLimit" class="input small" type="number" min="1" step="1" value="15" disabled />
+          </label>
+          <div class="palette-wrap">
+            <span class="palette-label">Palette</span>
+            <div id="palette" class="palette"></div>
+          </div>
+          <p class="hint" id="colorHint"></p>
+        </div>
+      </aside>
+    </main>
+
+    <!-- Bottom bar -->
+    <footer class="bottombar">
+      <div class="outdir">
+        <span class="outdir-label">Output folder</span>
+        <div class="outdir-row">
+          <input id="outputDir" class="input" type="text" readonly placeholder="Choose a folder…" />
+          <button id="chooseDirBtn" class="ghost-btn" type="button">Choose…</button>
+        </div>
+      </div>
+      <div class="convert-area">
+        <div id="progressWrap" class="progress-wrap hidden">
+          <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
+          <span id="progressText" class="progress-text"></span>
+        </div>
+        <button id="convertBtn" class="primary-btn" type="button" disabled>Convert</button>
+      </div>
+    </footer>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
