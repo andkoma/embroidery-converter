@@ -222,6 +222,56 @@ Before building for distribution, review [PREFLIGHT_CHECKLIST.md](./PREFLIGHT_CH
 
 ---
 
+## 🚀 Automated Builds with GitHub Actions
+
+This project uses **GitHub Actions** for automatic cross-platform builds:
+
+- **macOS builds** (arm64 + x64) on every release tag
+- **Windows builds** automatically via GitHub runners
+- **Installers uploaded** as release assets
+
+📖 **See [CI_CD.md](./CI_CD.md)** for setup and usage.
+
+**Quick start:**
+```bash
+git tag v1.0.1
+git push --tags
+```
+→ Builds trigger automatically, results appear in Releases tab after ~15 minutes.
+
+---
+
+## 📥 Getting Started After Installation
+
+New users can test the app immediately with sample files:
+
+📖 **See [GETTING_STARTED.md](./GETTING_STARTED.md)** for:
+- How to get sample files
+- Step-by-step test workflow
+- Format reference guide
+- Troubleshooting tips
+
+**Quick test:**
+```bash
+cd samples/
+python3 generate_samples.py
+```
+Then drag generated `.pes`, `.dst`, `.jef` files into the app!
+
+---
+
+## 📋 License & Third-Party Attributions
+
+This project respects all open-source licenses:
+
+- **Electron** (MIT) — Desktop framework
+- **electron-builder** (MIT) — App packaging
+- **pyembroidery** (MIT) — Format conversion engine
+
+📖 **See [LICENSES.md](./LICENSES.md)** for complete license information and attribution.
+
+---
+
 ## Supported format notes
 
 - **DST / EXP / TAP** store no thread color information — colors are dropped when
