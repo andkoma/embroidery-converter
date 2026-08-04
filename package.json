@@ -25,7 +25,6 @@
     "appId": "ai.orgware.embroideryconverter",
     "productName": "Embroidery Converter",
     "copyright": "Copyright © 2024 orgware.ai (andkoma@akopp.de). Created with AI support.",
-    "afterSign": "scripts/afterSign.js",
     "directories": {
       "output": "release",
       "buildResources": "assets"
