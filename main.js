@@ -1,3 +1,8 @@
+/**
+ * Embroidery Converter - Electron Main Process
+ * Copyright © 2024 orgware.ai (andkoma@akopp.de)
+ * This application was created with AI support.
+ */
 'use strict';
 
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
@@ -31,21 +36,83 @@ function findBundledBinary() {
   return fs.existsSync(candidate) ? candidate : null;
 }
 
-function findSystemPython() {
-  const candidates =
-    process.platform === 'win32'
-      ? ['python.exe', 'python3.exe', 'python', 'python3']
-      : ['python3', 'python'];
-  for (const c of candidates) {
-    try {
-      const res = spawnSync(c, ['--version'], { encoding: 'utf8' });
-      if (res.status === 0 || (res.stdout || res.stderr || '').toLowerCase().includes('python')) {
-        return c;
+// Cache the resolved interpreter so we do not probe the filesystem repeatedly.
+let _cachedPython = undefined; // undefined = not searched yet, null = not found
+
+/**
+ * Verify that a given command/path is a working Python 3 interpreter.
+ * Returns true only when `--version` reports Python 3.x.
+ */
+function isWorkingPython(cmd) {
+  try {
+    const res = spawnSync(cmd, ['--version'], { encoding: 'utf8', windowsHide: true });
+    const out = ((res.stdout || '') + (res.stderr || '')).trim();
+    return /python\s+3\./i.test(out);
+  } catch (_) {
+    return false;
+  }
+}
+
+/**
+ * Build the list of candidate interpreters to probe. We include BOTH bare
+ * command names (resolved via PATH) AND absolute paths at the well-known
+ * install locations, because a GUI-launched app on macOS/Windows often does
+ * NOT inherit the user's shell PATH (this is the usual cause of a backend
+ * that works from a terminal but fails when double-clicked).
+ */
+function pythonCandidates() {
+  const home = process.env.HOME || process.env.USERPROFILE || '';
+  if (process.platform === 'win32') {
+    const list = ['py', 'python', 'python3', 'python.exe', 'python3.exe'];
+    const roots = [
+      process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, 'Programs', 'Python'),
+      'C:\\Program Files\\Python312', 'C:\\Program Files\\Python311',
+      'C:\\Program Files\\Python310', 'C:\\Program Files\\Python39',
+      'C:\\Python312', 'C:\\Python311', 'C:\\Python310',
+    ].filter(Boolean);
+    for (const r of roots) {
+      // LocalAppData Programs/Python contains PythonXY subfolders
+      list.push(path.join(r, 'python.exe'));
+      for (const v of ['312', '311', '310', '39']) {
+        list.push(path.join(r, 'Python' + v, 'python.exe'));
       }
-    } catch (_) {
-      /* keep trying */
+    }
+    return list;
+  }
+  // macOS + Linux
+  const list = ['python3', 'python'];
+  const abs = [
+    '/usr/bin/python3',
+    '/usr/local/bin/python3',
+    '/opt/homebrew/bin/python3',            // Apple-silicon Homebrew
+    '/opt/local/bin/python3',               // MacPorts
+    '/Library/Frameworks/Python.framework/Versions/Current/bin/python3',
+  ];
+  // python.org framework installs (versioned)
+  for (const v of ['3.12', '3.11', '3.10', '3.9']) {
+    abs.push('/Library/Frameworks/Python.framework/Versions/' + v + '/bin/python3');
+    abs.push('/usr/local/bin/python' + v);
+    abs.push('/opt/homebrew/bin/python' + v);
+  }
+  if (home) {
+    abs.push(path.join(home, '.pyenv', 'shims', 'python3'));
+    abs.push(path.join(home, 'anaconda3', 'bin', 'python3'));
+    abs.push(path.join(home, 'miniconda3', 'bin', 'python3'));
+  }
+  return list.concat(abs);
+}
+
+function findSystemPython() {
+  if (_cachedPython !== undefined) return _cachedPython;
+  for (const c of pythonCandidates()) {
+    // For absolute paths, make sure the file exists before spawning.
+    if (path.isAbsolute(c) && !fs.existsSync(c)) continue;
+    if (isWorkingPython(c)) {
+      _cachedPython = c;
+      return c;
     }
   }
+  _cachedPython = null;
   return null;
 }
 
@@ -174,17 +241,45 @@ app.on('window-all-closed', () => {
  * ------------------------------------------------------------------ */
 
 ipcMain.handle('backend:status', async () => {
-  const backend = resolveBackend();
-  if (!backend) {
-    return { available: false, mode: null };
+  try {
+    const backend = resolveBackend();
+    if (!backend) {
+      // No bundled binary AND no Python interpreter found on the machine.
+      const scriptOk = fs.existsSync(resourcePath('scripts', 'convert.py'));
+      return {
+        available: false,
+        mode: null,
+        pythonFound: false,
+        reason: 'no-python',
+        error: !scriptOk
+          ? 'Conversion engine files are missing from the installation.'
+          : 'Python 3 could not be found on this computer. Install Python 3 ' +
+            '(python.org) and reopen the app — the bundled conversion engine ' +
+            'needs a Python 3 runtime.',
+      };
+    }
+    // A backend was resolved; confirm the engine actually runs (imports the
+    // bundled pyembroidery and returns the format list).
+    const res = await runBackend('formats', {});
+    return {
+      available: !!res.success,
+      mode: backend.mode,
+      pythonFound: backend.mode !== 'bundled',
+      command: backend.command,
+      reason: res.success ? null : 'engine-error',
+      error: res.success ? null : (res.error || 'The conversion engine failed to start.'),
+    };
+  } catch (e) {
+    // Never let this throw — the renderer treats a thrown status as a hard
+    // "Backend error", which is unhelpful. Return a structured failure.
+    return {
+      available: false,
+      mode: null,
+      pythonFound: false,
+      reason: 'exception',
+      error: 'Unexpected backend error: ' + (e && e.message ? e.message : String(e)),
+    };
   }
-  // confirm pyembroidery is importable when using system python
-  const res = await runBackend('formats', {});
-  return {
-    available: !!res.success,
-    mode: backend.mode,
-    error: res.success ? null : res.error,
-  };
 });
 
 ipcMain.handle('backend:formats', async () => {

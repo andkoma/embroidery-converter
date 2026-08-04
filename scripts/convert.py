@@ -2,6 +2,9 @@
 """
 Embroidery Converter - Python backend
 
+Copyright © 2024 orgware.ai (andkoma@akopp.de)
+This application was created with AI support.
+
 Uses the `pyembroidery` library to read, transform and write embroidery
 stitch files. Invoked by the Electron main process as a subprocess.
 
@@ -44,6 +47,17 @@ import os
 import json
 import math
 import traceback
+
+# --------------------------------------------------------------------------- #
+#  Make the bundled (vendored) copy of pyembroidery importable so the app is
+#  self-contained and works even when the user has NOT run `pip install`.
+#  The vendored copy lives next to this script in ./vendor/. We insert it at
+#  the FRONT of sys.path so it is preferred, and fall back to any system
+#  install if the vendored copy is missing.
+# --------------------------------------------------------------------------- #
+_VENDOR_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor")
+if os.path.isdir(_VENDOR_DIR) and _VENDOR_DIR not in sys.path:
+    sys.path.insert(0, _VENDOR_DIR)
 
 UNITS_PER_MM = 10.0  # pyembroidery uses 1/10 mm units
 
@@ -118,6 +132,84 @@ def _metadata(pattern):
     }
 
 
+def _preview_polylines(pattern, max_points=4000):
+    """
+    Build a lightweight vector preview of the pattern for the UI gallery.
+
+    Returns a dict:
+        {
+          "left": float, "top": float,       # bounding box in 1/10 mm
+          "width": float, "height": float,   # bounding box size in 1/10 mm
+          "lines": [ {"hex": "#RRGGBB", "pts": [[x, y], ...]}, ... ]
+        }
+
+    Real STITCH runs become polylines. A JUMP / TRIM / COLOR_CHANGE / STOP /
+    END breaks the current polyline. Coordinates are kept in pattern units
+    (1/10 mm); the renderer normalises them to the canvas. When a pattern has
+    a very large stitch count, points are decimated so the payload stays small
+    while preserving the overall shape.
+    """
+    from pyembroidery import STITCH, JUMP, TRIM, COLOR_CHANGE, NEEDLE_SET, STOP, END
+
+    try:
+        left, top, right, bottom = pattern.bounds()
+    except Exception:
+        left = top = 0.0
+        right = bottom = 1.0
+
+    threads = pattern.threadlist
+    total = pattern.count_stitches()
+    step = 1
+    if total > max_points:
+        step = int(math.ceil(total / float(max_points)))
+
+    def color_hex(idx):
+        try:
+            t = threads[idx]
+            c = t.get_red() << 16 | t.get_green() << 8 | t.get_blue()
+            return "#%06X" % (c & 0xFFFFFF)
+        except Exception:
+            return "#333333"
+
+    lines = []
+    color_idx = 0
+    current = {"hex": color_hex(0), "pts": []}
+    i = 0
+    prev_stitch = False
+    for x, y, cmd in pattern.stitches:
+        base = cmd & 0xFF
+        if base == STITCH:
+            if not prev_stitch and current["pts"]:
+                # starting a fresh run after a break
+                lines.append(current)
+                current = {"hex": color_hex(color_idx), "pts": []}
+            if i % step == 0:
+                current["pts"].append([round(x, 1), round(y, 1)])
+            prev_stitch = True
+            i += 1
+        else:
+            # control command breaks the polyline
+            if current["pts"]:
+                lines.append(current)
+            if base in (COLOR_CHANGE, NEEDLE_SET):
+                color_idx += 1
+            current = {"hex": color_hex(color_idx), "pts": []}
+            prev_stitch = False
+    if current["pts"]:
+        lines.append(current)
+
+    # drop degenerate single-point lines
+    lines = [ln for ln in lines if len(ln["pts"]) >= 2]
+
+    return {
+        "left": round(left, 1),
+        "top": round(top, 1),
+        "width": round(right - left, 1) or 1.0,
+        "height": round(bottom - top, 1) or 1.0,
+        "lines": lines,
+    }
+
+
 def cmd_inspect(args):
     input_path = args.get("input_path")
     if not input_path:
@@ -129,6 +221,11 @@ def cmd_inspect(args):
     meta = _metadata(pattern)
     meta["success"] = True
     meta["warnings"] = []
+    # include a compact vector preview so the UI can show a thumbnail gallery
+    try:
+        meta["preview"] = _preview_polylines(pattern)
+    except Exception:
+        meta["preview"] = None
     _emit(meta)
 
 

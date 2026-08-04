@@ -10,6 +10,12 @@ supports 80+ embroidery formats.
 ## Features
 
 - **Drag & drop** any number of embroidery files onto the window (or browse).
+- **Input preview gallery** — each added file shows a small vector thumbnail of
+  the actual stitches (rendered in its thread colors) so you get visual feedback
+  before converting.
+- **Multi-language UI** — switch the interface between **English**, **Deutsch**
+  and **Français** from the language selector in the top bar (remembered between
+  sessions).
 - **Read** formats: DST, PES, PEC, JEF, VP3, HUS, XXX, EXP, SEW, U01, TAP, PHB,
   PHC, BRO, DAT, DSB, DSZ, EMD, 10O, 100, SHV, KSM, MAX, JPX, TBF, GT, INB, ZXY,
   CSV, JSON, GCODE and more.
@@ -40,9 +46,12 @@ embroidery_converter/
 ├── renderer/
 │   ├── index.html
 │   ├── styles.css
+│   ├── i18n.js           EN / DE / FR interface translations
 │   └── renderer.js
 ├── scripts/
 │   ├── convert.py        pyembroidery read / transform / write logic
+│   ├── vendor/
+│   │   └── pyembroidery/ bundled pure-Python engine (no pip needed)
 │   └── requirements.txt
 ├── assets/               icon.ico, icon.icns, icon.png
 └── README.md
@@ -55,6 +64,16 @@ embroidery_converter/
   1. A **bundled PyInstaller binary** at `resources/pybin/convert[.exe]`
      (used in packaged builds — no Python required on the user's machine).
   2. The **system Python** running `scripts/convert.py` (used in development).
+     `main.js` searches a broad list of interpreter locations (Homebrew,
+     python.org framework, pyenv, conda, `Program Files`, …) because a
+     GUI-launched app does **not** inherit the shell `PATH`. If no working
+     Python 3 is found, the backend badge reports the reason instead of a bare
+     "Backend error".
+- **Vendored `pyembroidery`** — a full copy of the pure-Python `pyembroidery`
+  library ships in `scripts/vendor/pyembroidery` and is prepended to
+  `sys.path` by `convert.py`. This means the source app works with **any** plain
+  Python 3 interpreter — no `pip install` step is required for the conversion
+  engine to run.
 - The **backend** (`scripts/convert.py`) exposes three sub-commands, each taking
   a JSON argument and returning a single JSON object on stdout:
   - `inspect {"input_path": "..."}` → metadata + thread palette.
@@ -203,3 +222,10 @@ npm run build:mac         # on macOS    -> release/*.dmg
 ## License
 
 MIT
+
+## Copyright & Credits
+
+Copyright © 2024 **[orgware.ai](https://orgware.ai)** — [andkoma@akopp.de](mailto:andkoma@akopp.de)
+
+> **EU AI Act Transparency Notice:** This application was developed with AI support,
+> in accordance with EU AI Act transparency requirements.

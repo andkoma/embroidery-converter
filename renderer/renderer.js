@@ -4,12 +4,65 @@
  *  State
  * ------------------------------------------------------------------ */
 const state = {
-  files: [],            // { id, path, name, ext, meta, status, threads, result }
+  files: [],            // { id, path, name, ext, meta, status, threads, result, preview }
   formats: [],          // supported formats from backend
   writable: [],         // writable extensions
   outputDir: '',
   seq: 1,
+  lang: 'en',
 };
+
+/* ------------------------------------------------------------------ *
+ *  i18n helpers
+ * ------------------------------------------------------------------ */
+function detectLanguage() {
+  const saved = (() => { try { return localStorage.getItem('ec_lang'); } catch (_) { return null; } })();
+  if (saved && window.I18N && window.I18N[saved]) return saved;
+  const nav = (navigator.language || 'en').slice(0, 2).toLowerCase();
+  return (window.I18N && window.I18N[nav]) ? nav : 'en';
+}
+
+function t(key, params) {
+  const dict = (window.I18N && window.I18N[state.lang]) || (window.I18N && window.I18N.en) || {};
+  let s = dict[key];
+  if (s === undefined) {
+    const en = (window.I18N && window.I18N.en) || {};
+    s = en[key] !== undefined ? en[key] : key;
+  }
+  if (params) {
+    for (const k of Object.keys(params)) {
+      s = s.replace(new RegExp('\\{' + k + '\\}', 'g'), params[k]);
+    }
+  }
+  return s;
+}
+
+// pluralised lookup: uses `${key}_plural` when n != 1
+function tp(key, n, params) {
+  const useKey = (n === 1) ? key : key + '_plural';
+  return t(useKey, Object.assign({ n: n }, params || {}));
+}
+
+function applyStaticI18n() {
+  document.querySelectorAll('[data-i18n]').forEach((node) => {
+    node.textContent = t(node.getAttribute('data-i18n'));
+  });
+  document.querySelectorAll('[data-i18n-ph]').forEach((node) => {
+    node.setAttribute('placeholder', t(node.getAttribute('data-i18n-ph')));
+  });
+  document.documentElement.lang = state.lang;
+}
+
+function setLanguage(lang) {
+  if (!window.I18N || !window.I18N[lang]) lang = 'en';
+  state.lang = lang;
+  try { localStorage.setItem('ec_lang', lang); } catch (_) {}
+  applyStaticI18n();
+  // re-render dynamic parts that contain translated text
+  refreshBackendLabel();
+  updateFormatDesc();
+  render();
+}
 
 // Format badge colors (by vendor family)
 const BADGE_COLORS = {
@@ -48,13 +101,18 @@ const progressFill = el('progressFill');
 const progressText = el('progressText');
 const backendBadge = el('backendBadge');
 const backendLabel = el('backendLabel');
+const langSelect = el('langSelect');
 
 let baseAspect = null; // width/height of the currently-selected reference file
+let backendState = { available: false }; // last backend status result
 
 /* ------------------------------------------------------------------ *
  *  Init
  * ------------------------------------------------------------------ */
 async function init() {
+  state.lang = detectLanguage();
+  if (langSelect) langSelect.value = state.lang;
+  applyStaticI18n();
   await checkBackend();
   await loadFormats();
   state.outputDir = (await window.api.defaultDir()) || '';
@@ -65,19 +123,33 @@ async function init() {
 
 async function checkBackend() {
   try {
-    const s = await window.api.backendStatus();
-    if (s.available) {
-      backendBadge.classList.add('ok');
-      backendLabel.textContent =
-        s.mode === 'bundled' ? 'Bundled Python ready' : 'System Python ready';
-    } else {
-      backendBadge.classList.add('bad');
-      backendLabel.textContent = 'Backend unavailable';
-      console.warn('Backend error:', s.error);
-    }
+    backendState = await window.api.backendStatus();
   } catch (e) {
+    // Handler is designed never to throw, but stay defensive.
+    backendState = { available: false, reason: 'exception', error: (e && e.message) || String(e) };
+  }
+  if (!backendState.available && backendState.error) {
+    console.warn('Backend not available:', backendState.error);
+  }
+  refreshBackendLabel();
+}
+
+function refreshBackendLabel() {
+  backendBadge.classList.remove('ok', 'bad');
+  const s = backendState || {};
+  if (s.available) {
+    backendBadge.classList.add('ok');
+    backendLabel.textContent =
+      s.mode === 'bundled' ? t('backend.ready.bundled') : t('backend.ready.system');
+    backendBadge.removeAttribute('title');
+  } else {
     backendBadge.classList.add('bad');
-    backendLabel.textContent = 'Backend error';
+    backendLabel.textContent =
+      s.reason === 'exception' || s.reason === 'engine-error'
+        ? t('backend.error')
+        : t('backend.unavailable');
+    // Surface the actionable detail as a tooltip instead of a bare "error".
+    backendBadge.title = s.error || t('backend.unavailable');
   }
 }
 
@@ -160,6 +232,11 @@ function bindEvents() {
 
   el('chooseDirBtn').addEventListener('click', chooseDir);
   convertBtn.addEventListener('click', convertAll);
+
+  // Language selector
+  if (langSelect) {
+    langSelect.addEventListener('change', () => setLanguage(langSelect.value));
+  }
 }
 
 async function browse() {
@@ -183,7 +260,7 @@ async function addFiles(paths) {
     const file = {
       id: state.seq++,
       path: p, name, ext,
-      meta: null, threads: [],
+      meta: null, threads: [], preview: null,
       status: 'pending', result: null,
     };
     state.files.push(file);
@@ -203,6 +280,7 @@ async function inspectFile(file) {
         height: res.height_mm,
       };
       file.threads = res.threads || [];
+      file.preview = res.preview || null;
     } else {
       file.status = 'error';
       file.result = { error: (res && res.error) || 'Could not read file' };
@@ -274,8 +352,7 @@ function updateFormatDesc() {
 function updateColorHint() {
   const tgt = outputFormatEl.value;
   if (NO_COLOR_FORMATS.has(tgt)) {
-    colorHint.textContent =
-      '.' + tgt.toUpperCase() + ' does not store thread colors — color info is dropped in this format.';
+    colorHint.textContent = t('colors.noStore', { fmt: tgt.toUpperCase() });
   } else {
     colorHint.textContent = '';
   }
@@ -286,21 +363,21 @@ function renderPalette(threads) {
   if (!threads || !threads.length) {
     const span = document.createElement('span');
     span.className = 'palette-empty';
-    span.textContent = 'No color info (add a file that stores colors).';
+    span.textContent = t('colors.noInfo');
     paletteEl.appendChild(span);
     return;
   }
-  threads.forEach((t, i) => {
+  threads.forEach((th, i) => {
     const sw = document.createElement('div');
     sw.className = 'swatch';
-    sw.style.background = t.hex || '#000';
-    sw.title = (t.description || ('Color ' + (i + 1))) + '  ' + (t.hex || '');
+    sw.style.background = th.hex || '#000';
+    sw.title = (th.description || ('Color ' + (i + 1))) + '  ' + (th.hex || '');
     const inp = document.createElement('input');
     inp.type = 'color';
-    inp.value = /^#[0-9a-f]{6}$/i.test(t.hex) ? t.hex : '#000000';
+    inp.value = /^#[0-9a-f]{6}$/i.test(th.hex) ? th.hex : '#000000';
     inp.addEventListener('input', () => {
       sw.style.background = inp.value;
-      t.hex = inp.value; // editable palette (visual)
+      th.hex = inp.value; // editable palette (visual)
     });
     sw.appendChild(inp);
     paletteEl.appendChild(sw);
@@ -346,7 +423,7 @@ async function convertAll() {
     file.status = 'converting';
     file.result = null;
     render();
-    progressText.textContent = 'Converting ' + file.name + '…';
+    progressText.textContent = t('progress.converting', { name: file.name });
 
     const payload = {
       input_path: file.path,
@@ -378,9 +455,10 @@ async function convertAll() {
     render();
   }
 
-  progressText.textContent = 'Finished — ' +
-    state.files.filter((f) => f.status === 'done').length + ' converted, ' +
-    state.files.filter((f) => f.status === 'error').length + ' failed.';
+  progressText.textContent = t('progress.finished', {
+    ok: state.files.filter((f) => f.status === 'done').length,
+    failed: state.files.filter((f) => f.status === 'error').length,
+  });
   convertBtn.disabled = false;
   updateConvertButton();
 }
@@ -398,16 +476,16 @@ function statusNode(file) {
   const icon = document.createElement('span');
   icon.className = 'status-icon';
   let label = '';
-  if (file.status === 'pending') { icon.textContent = '•'; label = 'Ready'; }
-  else if (file.status === 'converting') { icon.innerHTML = '<span class="spinner"></span>'; label = 'Converting'; }
-  else if (file.status === 'done') { icon.textContent = '✓'; label = 'Done'; }
-  else if (file.status === 'error') { icon.textContent = '✕'; label = 'Error'; }
+  if (file.status === 'pending') { icon.textContent = '•'; label = t('status.ready'); }
+  else if (file.status === 'converting') { icon.innerHTML = '<span class="spinner"></span>'; label = t('status.converting'); }
+  else if (file.status === 'done') { icon.textContent = '✓'; label = t('status.done'); }
+  else if (file.status === 'error') { icon.textContent = '✕'; label = t('status.error'); }
   const text = document.createElement('span');
   text.textContent = label;
   wrap.appendChild(icon); wrap.appendChild(text);
   if (file.status === 'done' && file.result && file.result.output_path) {
     wrap.style.cursor = 'pointer';
-    wrap.title = 'Show in folder';
+    wrap.title = t('status.showInFolder');
     wrap.addEventListener('click', () => window.api.showItem(file.result.output_path));
   }
   if (file.status === 'error' && file.result) {
@@ -418,20 +496,59 @@ function statusNode(file) {
 
 function metaText(file) {
   if (file.status === 'error' && file.result) {
-    return 'Error: ' + (file.result.error || '').split('\n')[0];
+    return t('meta.errorPrefix', { msg: (file.result.error || '').split('\n')[0] });
   }
-  if (!file.meta) return 'Reading…';
+  if (!file.meta) return t('meta.reading');
   const m = file.meta;
   const parts = [
-    m.stitches.toLocaleString() + ' stitches',
-    m.colors + ' color' + (m.colors === 1 ? '' : 's'),
-    m.width + ' × ' + m.height + ' mm',
+    t('meta.stitches', { n: m.stitches.toLocaleString() }),
+    tp('meta.colors', m.colors),
+    t('meta.size', { w: m.width, h: m.height }),
   ];
   let extra = '';
   if (file.status === 'done' && file.result && file.result.warnings && file.result.warnings.length) {
-    extra = '  ⚠ ' + file.result.warnings.length + ' note' + (file.result.warnings.length === 1 ? '' : 's');
+    extra = '  ⚠ ' + tp('meta.notes', file.result.warnings.length);
   }
   return parts.join('  •  ') + extra;
+}
+
+/**
+ * Draw a stitch preview onto a canvas. `preview` is the object returned by the
+ * backend: { left, top, width, height, lines: [{hex, pts:[[x,y],...]}] } in
+ * pattern units (1/10 mm). We normalise + fit into the canvas with padding.
+ */
+function drawPreview(canvas, preview) {
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  // subtle background
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, W, H);
+
+  const pad = 6;
+  const pw = preview.width || 1;
+  const ph = preview.height || 1;
+  const scale = Math.min((W - 2 * pad) / pw, (H - 2 * pad) / ph);
+  // centre the design
+  const offX = (W - pw * scale) / 2;
+  const offY = (H - ph * scale) / 2;
+
+  const tx = (x) => offX + (x - preview.left) * scale;
+  const ty = (y) => offY + (y - preview.top) * scale;
+
+  ctx.lineWidth = 0.9;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  for (const line of preview.lines) {
+    if (!line.pts || line.pts.length < 2) continue;
+    ctx.strokeStyle = line.hex || '#333';
+    ctx.beginPath();
+    ctx.moveTo(tx(line.pts[0][0]), ty(line.pts[0][1]));
+    for (let i = 1; i < line.pts.length; i++) {
+      ctx.lineTo(tx(line.pts[i][0]), ty(line.pts[i][1]));
+    }
+    ctx.stroke();
+  }
 }
 
 function render() {
@@ -443,10 +560,23 @@ function render() {
     const li = document.createElement('li');
     li.className = 'file-item';
 
-    const badge = document.createElement('div');
-    badge.className = 'fmt-badge';
-    badge.style.background = badgeColor(file.ext);
-    badge.textContent = file.ext;
+    // Preview thumbnail (vector render of the stitches)
+    const thumb = document.createElement('div');
+    thumb.className = 'file-thumb';
+    if (file.preview && file.preview.lines && file.preview.lines.length) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 96; canvas.height = 96;
+      canvas.className = 'thumb-canvas';
+      thumb.appendChild(canvas);
+      // draw after it is in the DOM
+      drawPreview(canvas, file.preview);
+    } else {
+      const badge = document.createElement('div');
+      badge.className = 'fmt-badge thumb-badge';
+      badge.style.background = badgeColor(file.ext);
+      badge.textContent = file.ext;
+      thumb.appendChild(badge);
+    }
 
     const main = document.createElement('div');
     main.className = 'file-main';
@@ -461,10 +591,10 @@ function render() {
     const remove = document.createElement('button');
     remove.className = 'remove-btn';
     remove.innerHTML = '&times;';
-    remove.title = 'Remove';
+    remove.title = t('status.remove');
     remove.addEventListener('click', () => removeFile(file.id));
 
-    li.appendChild(badge);
+    li.appendChild(thumb);
     li.appendChild(main);
     li.appendChild(statusNode(file));
     li.appendChild(remove);

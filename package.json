@@ -2,7 +2,10 @@
   "name": "embroidery-converter",
   "version": "1.0.0",
   "description": "Cross-platform desktop app to convert embroidery stitch files between formats using pyembroidery.",
-  "author": "Embroidery Converter",
+  "author": {
+    "name": "orgware.ai",
+    "email": "andkoma@akopp.de"
+  },
   "license": "MIT",
   "main": "main.js",
   "scripts": {
@@ -12,15 +15,16 @@
     "build:win": "electron-builder --win",
     "build:mac": "electron-builder --mac",
     "build:all": "electron-builder -mw",
-    "python:bundle": "pyinstaller --onefile --distpath ./pybuild/dist --workpath ./pybuild/build --specpath ./pybuild --name convert scripts/convert.py"
+    "python:bundle": "pyinstaller --onefile --distpath ./pybuild/dist --workpath ./pybuild/build --specpath ./pybuild --name convert --paths scripts/vendor --collect-submodules pyembroidery scripts/convert.py"
   },
   "devDependencies": {
     "electron": "^31.0.0",
     "electron-builder": "^24.13.3"
   },
   "build": {
-    "appId": "com.embroideryconverter.app",
+    "appId": "ai.orgware.embroideryconverter",
     "productName": "Embroidery Converter",
+    "copyright": "Copyright © 2024 orgware.ai (andkoma@akopp.de). Created with AI support.",
     "directories": {
       "output": "release",
       "buildResources": "assets"

@@ -58,6 +58,23 @@ html, body {
 .brand-text h1 { margin: 0; font-size: 17px; font-weight: 650; letter-spacing: -0.2px; }
 .subtitle { font-size: 12px; color: var(--text-dim); }
 
+.topbar-right { display: flex; align-items: center; gap: 12px; }
+
+.lang-select {
+  display: flex; align-items: center; gap: 6px;
+  color: var(--text-dim);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  padding: 5px 10px 5px 11px;
+  border-radius: 20px;
+}
+.lang-select svg { flex-shrink: 0; opacity: 0.8; }
+.lang-select select {
+  border: none; background: none; outline: none;
+  font: inherit; font-size: 12.5px; color: var(--text);
+  cursor: pointer; padding: 0 2px; appearance: none;
+}
+
 .backend-badge {
   display: flex; align-items: center; gap: 8px;
   font-size: 12.5px; color: var(--text-dim);
@@ -142,6 +159,26 @@ html, body {
   font-size: 11px; font-weight: 700; letter-spacing: .5px;
   color: #fff;
   text-transform: uppercase;
+}
+
+/* Input file preview thumbnail */
+.file-thumb {
+  flex-shrink: 0;
+  width: 54px; height: 54px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: #fff;
+  display: grid; place-items: center;
+  overflow: hidden;
+}
+.thumb-canvas {
+  width: 52px; height: 52px;
+  border-radius: 8px;
+  display: block;
+}
+.fmt-badge.thumb-badge {
+  width: 54px; height: 54px;
+  border: none;
 }
 .file-main { flex: 1; min-width: 0; }
 .file-name { font-weight: 600; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -257,3 +294,24 @@ html, body {
 .primary-btn:disabled { background: #c3c6d4; box-shadow: none; cursor: not-allowed; }
 
 .hidden { display: none !important; }
+
+/* Copyright bar */
+.copyright-bar {
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-dim);
+  padding: 5px 16px 6px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  flex-shrink: 0;
+}
+.copyright-bar a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.copyright-bar a:hover { text-decoration: underline; }
+.ai-notice {
+  font-style: italic;
+  cursor: help;
+  border-bottom: 1px dotted var(--text-dim);
+}
