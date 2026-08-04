@@ -178,34 +178,47 @@ Python if it is missing.
 
 ## Building installers
 
-```bash
-# Current platform
-npm run build
+**You have two build options:**
 
-# Windows NSIS installer (.exe)  ->  release/
-npm run build:win
-
-# macOS DMG (.dmg)               ->  release/
-npm run build:mac
-```
-
-electron-builder configuration (in `package.json`):
-
-- `appId`: `com.embroideryconverter.app`
-- `productName`: `Embroidery Converter`
-- **Windows**: `nsis` target, icon `assets/icon.ico`
-- **macOS**: `dmg` target, icon `assets/icon.icns`
-- Output directory: `release/`
-
-### Recommended full release flow
+### Option 1: Lightweight (~100 MB, requires Python 3.7+)
+Users must have Python 3.7+ installed. Smaller download, faster installation.
 
 ```bash
 npm install
-pip install -r scripts/requirements.txt pyinstaller
-npm run python:bundle     # produces pybuild/dist/convert[.exe]
-npm run build:win         # on Windows  -> release/*.exe
-npm run build:mac         # on macOS    -> release/*.dmg
+rm -rf pybuild/dist/convert*
+npm run build:win   # or build:mac
 ```
+
+📖 **See [BUILD_OPTION1.md](./BUILD_OPTION1.md)** for complete guide.
+
+---
+
+### Option 2: Self-Contained (~150 MB, no Python required)
+Everything bundled. Works out-of-the-box, no dependencies.
+
+```bash
+npm install
+pip install pyinstaller
+npm run python:bundle
+npm run build:win   # or build:mac
+```
+
+📖 **See [BUILD.md](./BUILD.md)** for complete guide.
+
+---
+
+### Which option should I choose?
+
+📊 **See [BUILD_COMPARISON.md](./BUILD_COMPARISON.md)** for detailed comparison and recommendations.
+
+**Quick guide:**
+- **Commercial/end-user software?** → Use **Option 2** (self-contained)
+- **Internal/developer tools?** → Use **Option 1** (lightweight)
+- **Not sure?** → Offer **both** and let users choose!
+
+### Pre-flight checklist
+
+Before building for distribution, review [PREFLIGHT_CHECKLIST.md](./PREFLIGHT_CHECKLIST.md) to ensure quality and verify all features work correctly.
 
 ---
 
