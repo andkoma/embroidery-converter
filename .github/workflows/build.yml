@@ -44,7 +44,7 @@ jobs:
         run: ls -la pybuild/dist/ 2>/dev/null || echo "No pybuild/dist yet"
       
       - name: Build macOS (${{ matrix.arch }})
-        run: npm run build:mac
+        run: electron-builder --mac -${{ matrix.arch }}
         env:
           # Optional: Only set if you have Apple Developer credentials
           APPLE_ID: ${{ secrets.APPLE_ID }}
@@ -108,7 +108,7 @@ jobs:
         run: dir pybuild\dist\ 2>nul || echo "No pybuild\dist yet"
       
       - name: Build Windows
-        run: npm run build:win
+        run: electron-builder --win -x64
       
       - name: List release artifacts
         run: dir release\ || echo "No release folder"
