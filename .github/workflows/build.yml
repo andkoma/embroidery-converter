@@ -5,6 +5,10 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+  
+env:
+  NODE_VERSION: '18'
+  PYTHON_VERSION: '3.9'
 
 jobs:
   build-macos:
@@ -19,37 +23,57 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
       
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.9'
-          cache: 'pip'
+          python-version: ${{ env.PYTHON_VERSION }}
       
-      - name: Install dependencies
-        run: npm install
+      - name: Install npm dependencies
+        run: npm ci
       
       - name: Install PyInstaller
         run: pip install pyinstaller
       
       - name: Bundle Python backend
         run: npm run python:bundle
+        
+      - name: List build artifacts
+        run: ls -la pybuild/dist/ 2>/dev/null || echo "No pybuild/dist yet"
       
       - name: Build macOS (${{ matrix.arch }})
         run: npm run build:mac
         env:
+          # Optional: Only set if you have Apple Developer credentials
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       
+      - name: List release artifacts
+        run: ls -lah release/ || echo "No release folder"
+      
+      - name: Find DMG files
+        id: find_dmg
+        run: |
+          find release -name "*.dmg" -type f || true
+          dmg_file=$(find release -name "*.dmg" -type f | head -1 || true)
+          if [ -n "$dmg_file" ]; then
+            echo "dmg_file=$dmg_file" >> $GITHUB_OUTPUT
+            echo "✅ Found DMG: $dmg_file"
+          else
+            echo "⚠️ No DMG file found"
+          fi
+      
       - name: Upload macOS artifact
+        if: steps.find_dmg.outputs.dmg_file != ''
         uses: actions/upload-artifact@v4
         with:
           name: embroidery-converter-macos-${{ matrix.arch }}
-          path: release/*.dmg
+          path: ${{ steps.find_dmg.outputs.dmg_file }}
           retention-days: 30
+          if-no-files-found: warn
 
   build-windows:
     name: 🪟 Build Windows
@@ -60,33 +84,53 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
       
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.9'
-          cache: 'pip'
+          python-version: ${{ env.PYTHON_VERSION }}
       
-      - name: Install dependencies
-        run: npm install
+      - name: Install npm dependencies
+        run: npm ci
       
       - name: Install PyInstaller
         run: pip install pyinstaller
       
       - name: Bundle Python backend
         run: npm run python:bundle
+        
+      - name: List build artifacts
+        run: dir pybuild\dist\ 2>nul || echo "No pybuild\dist yet"
       
       - name: Build Windows
         run: npm run build:win
       
+      - name: List release artifacts
+        run: dir release\ || echo "No release folder"
+      
+      - name: Find EXE file
+        id: find_exe
+        run: |
+          for /r release %%F in (*.exe) do (
+            echo Found EXE: %%F
+            echo exe_file=%%F >> %GITHUB_OUTPUT%
+            goto found
+          )
+          :found
+          if not defined exe_file (
+            echo No EXE file found
+          )
+      
       - name: Upload Windows artifact
+        if: steps.find_exe.outputs.exe_file != ''
         uses: actions/upload-artifact@v4
         with:
           name: embroidery-converter-windows
-          path: release/*.exe
+          path: ${{ steps.find_exe.outputs.exe_file }}
           retention-days: 30
+          if-no-files-found: warn
 
   create-release:
     name: 📢 Create Release
@@ -99,13 +143,17 @@ jobs:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
-          path: ./artifacts
+          path: ./release-artifacts
+      
+      - name: List downloaded artifacts
+        run: find release-artifacts -type f -name "*.dmg" -o -name "*.exe" | xargs ls -lah
       
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          files: artifacts/**/*
+          files: release-artifacts/**/*
           draft: false
           prerelease: false
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
