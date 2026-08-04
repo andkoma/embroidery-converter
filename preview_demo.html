@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Input Preview Gallery Demo - Embroidery Converter</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 40px 20px;
+            color: #333;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        .feature-explanation {
+            background: #f8f9ff;
+            border-left: 4px solid #667eea;
+            padding: 15px 20px;
+            margin-bottom: 25px;
+            border-radius: 4px;
+        }
+        .feature-explanation h3 {
+            color: #667eea;
+            margin-bottom: 8px;
+            font-size: 16px;
+        }
+        .feature-explanation p {
+            color: #555;
+            line-height: 1.6;
+            font-size: 14px;
+        }
+        .feature-explanation ul {
+            margin: 10px 0 0 20px;
+            color: #555;
+        }
+        .feature-explanation li {
+            margin: 5px 0;
+            font-size: 14px;
+        }
+        
+        /* File list styling (from actual app) */
+        .filelist {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin-top: 20px;
+        }
+        .file-item {
+            display: grid;
+            grid-template-columns: 54px 1fr auto;
+            gap: 12px;
+            padding: 12px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            align-items: center;
+            border: 1px solid #e0e0e0;
+        }
+        .file-thumb {
+            width: 54px;
+            height: 54px;
+            border-radius: 6px;
+            background: white;
+            border: 1px solid #ddd;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            overflow: hidden;
+        }
+        .thumb-canvas {
+            width: 52px;
+            height: 52px;
+            background: white;
+        }
+        .thumb-badge {
+            position: absolute;
+            bottom: 2px;
+            right: 2px;
+            background: #667eea;
+            color: white;
+            font-size: 9px;
+            font-weight: bold;
+            padding: 2px 4px;
+            border-radius: 3px;
+            text-transform: uppercase;
+        }
+        .file-info {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .file-name {
+            font-weight: 500;
+            color: #333;
+            font-size: 14px;
+        }
+        .file-meta {
+            font-size: 12px;
+            color: #666;
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .meta-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .color-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            border: 1px solid #ddd;
+            display: inline-block;
+        }
+        .palette-preview {
+            display: flex;
+            gap: 2px;
+            align-items: center;
+        }
+        
+        .code-section {
+            margin-top: 30px;
+            background: #f5f5f5;
+            border-radius: 8px;
+            padding: 20px;
+        }
+        .code-section h3 {
+            color: #333;
+            margin-bottom: 12px;
+            font-size: 16px;
+        }
+        .code-section pre {
+            background: #2d2d2d;
+            color: #f8f8f2;
+            padding: 15px;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎨 Input Preview Gallery</h1>
+        <p class="subtitle">Visual demonstration of the embroidery file preview feature</p>
+        
+        <div class="feature-explanation">
+            <h3>📋 What is the Input Preview Gallery?</h3>
+            <p>When you add embroidery files to the converter, each file gets a <strong>thumbnail preview</strong> showing the actual stitch pattern in its thread colors. This helps you:</p>
+            <ul>
+                <li><strong>Visually verify</strong> the design before conversion</li>
+                <li><strong>See thread colors</strong> exactly as they appear in the file</li>
+                <li><strong>Identify files quickly</strong> when working with multiple designs</li>
+                <li><strong>Check quality</strong> - preview is rendered from actual stitch coordinates</li>
+            </ul>
+        </div>
+
+        <div class="feature-explanation">
+            <h3>⚙️ How it works</h3>
+            <p><strong>Backend:</strong> The Python <code>convert.py</code> script includes a <code>_preview_polylines()</code> function that extracts stitch coordinates and thread colors from each file. It returns JSON with:</p>
+            <ul>
+                <li><code>{left, top, width, height}</code> - bounding box in 1/10mm units</li>
+                <li><code>lines: [{hex, pts: [[x,y], ...]}]</code> - polylines per thread color</li>
+                <li>Smart decimation when stitch count > 4000 to keep payload small</li>
+            </ul>
+            <p><strong>Frontend:</strong> The <code>renderer.js</code> draws these polylines on a 54×54px canvas with 6px padding, auto-scaling to fit and preserving thread colors.</p>
+        </div>
+
+        <h2 style="margin: 30px 0 15px 0; font-size: 18px; color: #333;">Example: Files with Preview Thumbnails</h2>
+        
+        <div class="filelist">
+            <!-- Example 1: Rose design -->
+            <div class="file-item">
+                <div class="file-thumb">
+                    <canvas class="thumb-canvas" id="preview1" width="52" height="52"></canvas>
+                    <span class="thumb-badge">PES</span>
+                </div>
+                <div class="file-info">
+                    <div class="file-name">rose_design.pes</div>
+                    <div class="file-meta">
+                        <span class="meta-item">📏 52.3 × 48.1 mm</span>
+                        <span class="meta-item">🧵 2,847 stitches</span>
+                        <span class="meta-item">
+                            <div class="palette-preview">
+                                <span class="color-dot" style="background: #e74c3c;"></span>
+                                <span class="color-dot" style="background: #27ae60;"></span>
+                                <span class="color-dot" style="background: #f39c12;"></span>
+                                3 colors
+                            </div>
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Example 2: Butterfly design -->
+            <div class="file-item">
+                <div class="file-thumb">
+                    <canvas class="thumb-canvas" id="preview2" width="52" height="52"></canvas>
+                    <span class="thumb-badge">DST</span>
+                </div>
+                <div class="file-info">
+                    <div class="file-name">butterfly.dst</div>
+                    <div class="file-meta">
+                        <span class="meta-item">📏 38.7 × 42.5 mm</span>
+                        <span class="meta-item">🧵 1,523 stitches</span>
+                        <span class="meta-item">
+                            <div class="palette-preview">
+                                <span class="color-dot" style="background: #3498db;"></span>
+                                <span class="color-dot" style="background: #9b59b6;"></span>
+                                <span class="color-dot" style="background: #e67e22;"></span>
+                                <span class="color-dot" style="background: #1abc9c;"></span>
+                                4 colors
+                            </div>
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Example 3: Logo design -->
+            <div class="file-item">
+                <div class="file-thumb">
+                    <canvas class="thumb-canvas" id="preview3" width="52" height="52"></canvas>
+                    <span class="thumb-badge">JEF</span>
+                </div>
+                <div class="file-info">
+                    <div class="file-name">company_logo.jef</div>
+                    <div class="file-meta">
+                        <span class="meta-item">📏 65.0 × 30.2 mm</span>
+                        <span class="meta-item">🧵 4,192 stitches</span>
+                        <span class="meta-item">
+                            <div class="palette-preview">
+                                <span class="color-dot" style="background: #2c3e50;"></span>
+                                <span class="color-dot" style="background: #ecf0f1;"></span>
+                                2 colors
+                            </div>
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="code-section">
+            <h3>📂 Where to find it in the code</h3>
+            <pre><code>// Backend: scripts/convert.py
+def _preview_polylines(pattern, max_points=4000):
+    """Extract polylines for canvas preview"""
+    # Returns {left, top, width, height, lines: [{hex, pts}]}
+
+// Frontend: renderer/renderer.js  
+function drawPreview(canvas, preview) {
+    // Draws stitch vectors on 52×52px canvas
+    // Auto-scales to fit, 6px padding
+    // Renders each thread color as separate path
+}</code></pre>
+        </div>
+    </div>
+
+    <script>
+        // Draw example preview on canvas 1 - Rose design
+        function drawRose(canvas) {
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, 52, 52);
+            
+            // Red rose petals
+            ctx.strokeStyle = '#e74c3c';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.arc(26, 26, 12, 0, Math.PI * 2);
+            ctx.moveTo(20, 26);
+            ctx.bezierCurveTo(20, 18, 32, 18, 32, 26);
+            ctx.bezierCurveTo(32, 18, 20, 18, 20, 26);
+            ctx.stroke();
+            
+            // Green stem
+            ctx.strokeStyle = '#27ae60';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(26, 38);
+            ctx.lineTo(26, 48);
+            ctx.stroke();
+            
+            // Orange details
+            ctx.strokeStyle = '#f39c12';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.arc(26, 26, 4, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+
+        // Draw example preview on canvas 2 - Butterfly
+        function drawButterfly(canvas) {
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, 52, 52);
+            
+            // Blue left wing
+            ctx.strokeStyle = '#3498db';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.ellipse(18, 20, 8, 10, 0, 0, Math.PI * 2);
+            ctx.stroke();
+            
+            // Purple right wing
+            ctx.strokeStyle = '#9b59b6';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.ellipse(34, 20, 8, 10, 0, 0, Math.PI * 2);
+            ctx.stroke();
+            
+            // Orange body
+            ctx.strokeStyle = '#e67e22';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(26, 12);
+            ctx.lineTo(26, 38);
+            ctx.stroke();
+            
+            // Teal antennae
+            ctx.strokeStyle = '#1abc9c';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(26, 12);
+            ctx.lineTo(22, 8);
+            ctx.moveTo(26, 12);
+            ctx.lineTo(30, 8);
+            ctx.stroke();
+        }
+
+        // Draw example preview on canvas 3 - Logo
+        function drawLogo(canvas) {
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, 52, 52);
+            
+            // Dark blue text shape
+            ctx.strokeStyle = '#2c3e50';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(10, 20);
+            ctx.lineTo(20, 20);
+            ctx.lineTo(15, 32);
+            ctx.closePath();
+            ctx.stroke();
+            
+            ctx.beginPath();
+            ctx.rect(24, 20, 10, 12);
+            ctx.stroke();
+            
+            ctx.beginPath();
+            ctx.arc(42, 26, 6, 0, Math.PI * 2);
+            ctx.stroke();
+            
+            // White highlights
+            ctx.strokeStyle = '#ecf0f1';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(12, 22);
+            ctx.lineTo(18, 22);
+            ctx.stroke();
+        }
+
+        // Initialize previews
+        drawRose(document.getElementById('preview1'));
+        drawButterfly(document.getElementById('preview2'));
+        drawLogo(document.getElementById('preview3'));
+    </script>
+</body>
+</html>
