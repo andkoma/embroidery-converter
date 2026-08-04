@@ -8,3 +8,13 @@ build/
 __pycache__/
 *.pyc
 .venv/
+
+# Auto-generated documentation files
+*.pdf
+*.docx
+
+# Test files
+test_*.js
+
+# System files
+.abacus.donotdelete
