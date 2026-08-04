@@ -198,6 +198,55 @@ npm run build:mac
 
 ---
 
+## 🔐 macOS Code Signing & Distribution
+
+### For Private/Internal Use ✅
+No code signing needed! The DMG works fine locally.
+
+### For Public Distribution 🔒
+macOS requires code signing. Two options:
+
+#### Option A: Self-Signed (for testing)
+```bash
+codesign --force --deep --sign - "release/mac/Embroidery Converter.app"
+```
+
+#### Option B: Apple Developer Certificate (for distribution)
+1. Enroll in Apple Developer Program ($99/year)
+2. Create code signing certificate in Xcode
+3. Set environment variables:
+   ```bash
+   export APPLE_ID="your-apple-id@example.com"
+   export APPLE_PASSWORD="your-app-specific-password"
+   export APPLE_TEAM_ID="XXXXXXXXXX"
+   ```
+4. Run build:
+   ```bash
+   npm run build:mac
+   ```
+
+The app will be automatically signed and notarized.
+
+**Learn more:** [Electron Code Signing](https://www.electron.build/code-signing)
+
+---
+
+## 🚀 Automated Builds with GitHub Actions
+
+### Build on Every Push (Free)
+We've set up GitHub Actions to automatically build for macOS and Windows. See [.github/workflows/build.yml](.github/workflows/build.yml).
+
+**Trigger a build:**
+1. Push a tag: `git tag v1.0.1 && git push --tags`
+2. Or manually: GitHub → Actions → Run workflow
+
+**Get installers:**
+- Go to Actions tab → Latest run
+- Download artifacts (macOS DMG + Windows EXE)
+- Alternatively: Create Release (auto-uploads to Releases)
+
+---
+
 ## ✅ Verification Checklist
 
 After building, verify your installer:
