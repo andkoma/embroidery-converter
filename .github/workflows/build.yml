@@ -45,11 +45,6 @@ jobs:
       
       - name: Build macOS (${{ matrix.arch }})
         run: npx electron-builder --mac --${{ matrix.arch }}
-        env:
-          # Optional: Only set if you have Apple Developer credentials
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       
       - name: List release artifacts
         run: ls -lah release/ || echo "No release folder"

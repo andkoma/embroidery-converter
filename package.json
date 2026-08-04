@@ -25,6 +25,7 @@
     "appId": "ai.orgware.embroideryconverter",
     "productName": "Embroidery Converter",
     "copyright": "Copyright © 2024 orgware.ai (andkoma@akopp.de). Created with AI support.",
+    "afterSign": "scripts/afterSign.js",
     "directories": {
       "output": "release",
       "buildResources": "assets"
@@ -62,7 +63,9 @@
     "mac": {
       "target": ["dmg"],
       "icon": "assets/icon.icns",
-      "category": "public.app-category.graphics-design"
+      "category": "public.app-category.graphics-design",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false
     },
     "dmg": {
       "title": "Embroidery Converter"
