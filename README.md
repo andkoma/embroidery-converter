@@ -7,6 +7,22 @@ supports 80+ embroidery formats.
 
 ![formats](https://img.shields.io/badge/formats-DST%20PES%20JEF%20VP3%20HUS%20XXX%20EXP%20SEW%20U01%20%E2%80%A6-5b5bd6)
 
+---
+
+## 📥 Quick Download
+
+**Ready to install?** Choose your platform:
+
+| Platform | Download |
+|----------|----------|
+| 🍎 **macOS (Apple Silicon M1/M2/M3/M4)** | [Download arm64.dmg](https://github.com/andkoma/embroidery-converter/releases/latest) |
+| 🍎 **macOS (Intel)** | [Download x64.dmg](https://github.com/andkoma/embroidery-converter/releases/latest) |
+| 🪟 **Windows (11/10)** | [Download Setup.exe](https://github.com/andkoma/embroidery-converter/releases/latest) |
+
+👉 **[See all versions & detailed instructions](./DOWNLOADS.md)**
+
+---
+
 ## Features
 
 - **Drag & drop** any number of embroidery files onto the window (or browse).
@@ -115,6 +131,22 @@ Result:
 
 > pyembroidery works internally in units of **1/10 mm** (10 units = 1 mm); the
 > script converts to/from millimetres for you.
+
+---
+
+## 📦 Installation
+
+### For End Users
+👉 **[Download the latest release](./DOWNLOADS.md)** for your platform:
+- macOS (arm64 or x64)
+- Windows (11/10)
+
+See [DOWNLOADS.md](./DOWNLOADS.md) for:
+- System requirements
+- Step-by-step installation
+- Which version to download
+
+After installation, see [GETTING_STARTED.md](./GETTING_STARTED.md) for first-time setup and testing!
 
 ---
 
