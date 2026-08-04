@@ -30,9 +30,15 @@ Embroidery enthusiasts, machine operators, and design professionals work with do
 ## 👥 Author(s) & Contributors
 
 ### Primary Author & Maintainer
-**Andreas Kopp** (andkoma@akopp.de)  
+**Andrew Kopp** (andkoma@akopp.de)  
 Organization: [orgware.ai](https://orgware.ai)  
 Location: Germany 🇩🇪
+
+**Background:**
+- 🎓 **40+ years** in computer science across multiple roles and domains
+- 💻 **AI Specialist** – Recent focus on experimental IDE support and AI education
+- 🌟 **Second Life** – Recently started retirement and creative projects
+- 🚀 **Mission** – Democratizing technology through open-source tools
 
 ### Development
 This application was developed with **AI support**, in accordance with **EU AI Act** transparency requirements. The codebase benefited from AI-assisted development for:
@@ -88,13 +94,18 @@ Interested? Check [GitHub Issues](https://github.com/andkoma/embroidery-converte
 ## 💡 Why We Built This
 
 ### The Motivation
-Managing embroidery files across multiple machines shouldn't require:
-- 💰 Expensive proprietary software licenses
-- ⏱️ Hours of manual conversion work
-- 🔐 Closed-source dependencies
-- 🤕 Vendor lock-in
+After 40+ years in computer science—working across diverse domains, from systems architecture to AI—I've learned that the best technology serves people, not complexity.
 
-Embroidery Converter was created to democratize embroidery file conversion—making it **free, fast, and reliable** for everyone.
+Embroidery Converter represents a personal philosophy: **technology should be simple, free, and community-driven.**
+
+Rather than selling yet another subscription, I'm building tools that democratize access to embroidery conversion—solving a real problem for a passionate community of makers.
+
+### The Transition to "Second Life"
+This project emerged during my transition to retirement, where I'm focusing on:
+- 🎨 **Creative Projects** – Building tools that empower makers and artists
+- 📚 **Education & Support** – Sharing knowledge from decades in tech
+- 🤝 **Open Source** – Giving back to communities that shaped my career
+- 🧠 **AI Exploration** – Continuing to experiment with modern AI tools
 
 ### Design Philosophy
 - **Open Source** – Full transparency and community-driven development
@@ -148,9 +159,12 @@ Special thanks to:
 - **[Electron Community](https://www.electronjs.org/community)** – Best practices and solutions
 
 ### Special Thanks
-- 🎓 **AI Assistants** – GitHub Copilot for development support
+- 🎓 **40+ Years of Tech Community** – Standing on the shoulders of giants in computer science
+- 🤖 **AI & IDE Innovation** – Grateful for tools and experiences in modern AI development
+- 🎨 **Maker Community** – Inspired by the creativity and passion of embroidery enthusiasts
+- 👨‍💻 **Open Source Community** – For the platforms, libraries, and knowledge that made this possible
+- 🎓 **AI Assistants** – GitHub Copilot for development support and rapid prototyping
 - 🐛 **Beta Testers** – Early users providing feedback
-- 🎨 **Embroidery Enthusiasts** – Sharing formats and test files
 - 👨‍💼 **orgware.ai** – Supporting open-source development
 
 ---

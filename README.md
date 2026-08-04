@@ -27,10 +27,10 @@ supports 80+ embroidery formats.
 
 👉 **[Learn about the project, authors, and vision](./ABOUT.md)**
 
-**Embroidery Converter** is a free, open-source solution for converting embroidery files between 50+ machine formats. Created to democratize embroidery file conversion for hobbyists, professionals, and businesses.
+**Embroidery Converter** is a free, open-source solution for converting embroidery files between 50+ machine formats. Created by Andrew Kopp, a computer scientist with 40+ years of experience in IT, now building creative tools in his second life.
 
 **Key Facts:**
-- 🎯 **Author:** Andreas Kopp ([orgware.ai](https://orgware.ai))
+- 🎯 **Author:** Andrew Kopp ([orgware.ai](https://orgware.ai)) – AI & Educational Tech Specialist
 - 📜 **License:** MIT (free for personal & commercial use)
 - 🚀 **Built with:** Electron + pyembroidery + AI-assisted development
 - 🌍 **Community-driven** – Issues, PRs, and suggestions welcome!

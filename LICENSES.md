@@ -124,7 +124,8 @@ SOFTWARE.
 ## 📞 Questions?
 
 For questions about licenses or attribution:
-- **Email:** andkoma@akopp.de
+- **Author:** Andrew Kopp (andkoma@akopp.de)
+- **Organization:** [orgware.ai](https://orgware.ai)
 - **Repository:** https://github.com/andkoma/embroidery-converter
 
 ---
