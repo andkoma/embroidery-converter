@@ -40,10 +40,6 @@
     "extraResources": [
       {
         "from": "pybuild/dist",
-        "filter": [
-          "convert",
-          "convert.exe"
-        ],
         "to": "pybin"
       }
     ],
