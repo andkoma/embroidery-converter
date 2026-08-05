@@ -185,6 +185,9 @@ jobs:
         with:
           path: ./release-artifacts
       
+      - name: Remove non-release artifacts
+        run: find release-artifacts -type f ! \( -name "*.dmg" -o -name "*.exe" \) -delete
+      
       - name: List release assets
         run: find release-artifacts -type f \( -name "*.dmg" -o -name "*.exe" \) -exec ls -lah {} +
       
