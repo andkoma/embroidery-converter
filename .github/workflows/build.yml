@@ -180,7 +180,10 @@ jobs:
         run: |
           Write-Host "=== Release folder contents immediately after build ==="
           if (Test-Path "release") {
-            dir release /s /b
+            Get-ChildItem -Path release -Recurse | ForEach-Object {
+              $type = if ($_.PSIsContainer) { "[DIR]" } else { "[FILE]" }
+              Write-Host "$($_.FullName) $type"
+            }
           } else {
             Write-Host "release folder does not exist"
           }
