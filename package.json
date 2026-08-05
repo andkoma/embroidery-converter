@@ -44,7 +44,7 @@
       }
     ],
     "publish": null,
-    "afterPack": "./scripts/removeSignature.js",
+    "afterPack": null,
     "win": {
       "target": ["nsis"],
       "icon": "assets/icon.ico"
