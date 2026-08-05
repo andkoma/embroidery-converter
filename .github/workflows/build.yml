@@ -151,8 +151,33 @@ jobs:
           npx electron-builder --win --x64 2>&1 | Tee-Object -FilePath build-output.log
           $exitCode = $LASTEXITCODE
           Write-Host "electron-builder exit code: $exitCode"
+          if ($exitCode -ne 0) {
+            Write-Host "❌ electron-builder FAILED with exit code $exitCode"
+            exit $exitCode
+          }
+          Write-Host "✅ electron-builder succeeded"
       
-      - name: Save build log
+      - name: Verify Windows build output
+        run: |
+          Write-Host "=== Verifying build output ==="
+          if (Test-Path "release") {
+            $exeFiles = Get-ChildItem -Path release -Recurse -Include "*.exe" -File
+            if ($exeFiles) {
+              Write-Host "✅ Found $($exeFiles.Count) .exe file(s):"
+              $exeFiles | ForEach-Object { Write-Host "  - $($_.FullName)" }
+            } else {
+              Write-Host "❌ ERROR: No .exe files found in release folder!"
+              Write-Host "Release folder contents:"
+              Get-ChildItem -Path release -Recurse | ForEach-Object {
+                $type = if ($_.PSIsContainer) { "DIR" } else { "FILE" }
+                Write-Host "  $($_.FullName) [$type]"
+              }
+              exit 1
+            }
+          } else {
+            Write-Host "❌ ERROR: release folder does not exist!"
+            exit 1
+          }
         if: always()
         uses: actions/upload-artifact@v4
         with:
