@@ -146,6 +146,21 @@ contextBridge.exposeInMainWorld('api', {
   getSettings: ()       => ipcRenderer.invoke('settings:get'),
   /** Patch-merges `patch` into stored settings; only provided keys change. */
   setSettings: (patch)  => ipcRenderer.invoke('settings:set', patch),
+  /** Returns the packaged app version string. */
+  getAppVersion: ()     => ipcRenderer.invoke('app:getVersion'),
+
+  /* ---------------------------------------------------------------- *
+   *  AI / vision (classification of design thumbnails)
+   * ---------------------------------------------------------------- */
+  /** Validate the configured AI provider/model with a tiny probe request. */
+  aiTest: ()            => ipcRenderer.invoke('ai:test'),
+  /**
+   * Classify one or more design images.
+   * @param {{ items: {id:string, image:string}[], categories?: string[], autoTag?: boolean }} payload
+   *        image = data URL (data:image/png;base64,...)
+   * @returns {Promise<{ok:boolean, results?:{id,category,tags}[], error?:string}>}
+   */
+  aiClassify: (payload) => ipcRenderer.invoke('ai:classify', payload),
 
   /* ---------------------------------------------------------------- *
    *  Dialogs & filesystem

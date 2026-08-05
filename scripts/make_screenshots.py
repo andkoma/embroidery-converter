@@ -79,6 +79,34 @@ def init_script(data):
 (function () {
   const D = window.__EC;
   const byPath = new Map(D.files.map(f => [f.path, f]));
+  function fileObj(f, extra) {
+    return Object.assign({ path: f.path, name: f.name, ext: f.ext,
+                           mtime: f.mtime, size: f.size, tags: [], category: '' }, extra || {});
+  }
+  const now = Date.now();
+  // A demo Collections tree: two roots, one with nested subgroups.
+  window.__SETTINGS = {
+    language: 'en',
+    theme: 'light',
+    galleryFolders: [D.samplesDir],
+    managedFolders: [{ id: 'demo', path: D.samplesDir, recursive: true }],
+    conversion: { defaultFormat: 'dst', resample: false, colorLimit: null, onConflict: 'suffix' },
+    transfer: { favoriteDestinations: [{ label: 'Brother USB', path: '/Volumes/BROTHER' }] },
+    transferFavorites: [{ label: 'Brother USB', path: '/Volumes/BROTHER' }],
+    defaultMachine: 'brother',
+    ai: { enabled: true, provider: 'ollama', endpoint: 'http://localhost:11434',
+          apiKey: '', model: 'llava', autoTag: true },
+    collections: [
+      { id: 'c-nature', name: 'Nature Designs', parentId: null, tags: [], createdAt: now,
+        files: [ fileObj(D.files[0], { category: 'Flowers', tags: ['floral','tulip'] }) ] },
+      { id: 'c-flowers', name: 'Flowers', parentId: 'c-nature', tags: [], createdAt: now,
+        files: D.files.filter(f => f.name.indexOf('tulip') === 0).map(f => fileObj(f, { category: 'Flowers', tags: ['floral'] })) },
+      { id: 'c-swirls', name: 'Swirls', parentId: 'c-nature', tags: [], createdAt: now,
+        files: D.files.filter(f => f.name.indexOf('spiral') === 0).map(f => fileObj(f)) },
+      { id: 'c-marine', name: 'Nautical', parentId: null, tags: [], createdAt: now,
+        files: D.files.filter(f => f.name.indexOf('nautical') === 0).map(f => fileObj(f, { category: 'Nautical', tags: ['anchor'] })) },
+    ],
+  };
   function metaOf(f) {
     const m = f.inspect || {};
     return {
@@ -112,18 +140,32 @@ def init_script(data):
       onThumb({ type: 'done', count: paths.length });
       return 'thumb-req';
     },
+    getThumbsCached: async (items, onThumb) => {
+      for (const it of items) {
+        const f = byPath.get(it.path);
+        if (f) onThumb({ type: 'thumb', path: it.path, meta: metaOf(f), preview: f.inspect.preview });
+      }
+      onThumb({ type: 'done', count: items.length });
+      return 'thumb-cached-req';
+    },
+    getAppVersion: async () => '2.0.0',
+    aiTest:        async () => ({ ok: true, sample: 'ok' }),
+    aiClassify:    async ({ items }) => ({
+      ok: true,
+      results: (items || []).map((it, i) => ({
+        id: it.id,
+        category: ['Flowers', 'Nautical', 'Lettering', 'Geometric'][i % 4],
+        tags: [['floral','tulip'], ['anchor','sea'], ['monogram','letter'], ['spiral','swirl']][i % 4],
+      })),
+    }),
     runBatch:      async (job, onProgress) => {
       (job.files || []).forEach(f => onProgress({ type: 'progress', path: f.path || f, status: 'done', outputPath: '/out' }));
       onProgress({ type: 'done', completed: (job.files || []).length, failed: 0 });
       return 'batch-req';
     },
     cancelStream:  async () => true,
-    getSettings:   async () => ({
-      language: 'en',
-      galleryFolders: [D.samplesDir],
-      managedFolders: [{ id: 'demo', path: D.samplesDir, recursive: true }],
-    }),
-    setSettings:   async () => true,
+    getSettings:   async () => JSON.parse(JSON.stringify(window.__SETTINGS)),
+    setSettings:   async (patch) => { Object.assign(window.__SETTINGS, patch || {}); return true; },
     openFiles:     async () => D.files.map(f => f.path),
     selectOutputDir: async () => '/Users/demo/Embroidery/Output',
     pickFolders:   async () => [D.samplesDir],
@@ -227,6 +269,33 @@ def main():
         except Exception as e:
             print("transfer dest select skipped:", e)
         shoot(page, "05-transfer.png")
+
+        # ---- Collections: nested tree + files grid + inspector ----
+        page.click('.nav-item[data-view="collections"]')
+        page.wait_for_timeout(1200)
+        # Expand the first root so its subgroups are visible.
+        try:
+            page.click('[data-toggle]', timeout=2000)
+            page.wait_for_timeout(400)
+        except Exception as e:
+            print("collections expand skipped:", e)
+        # Select the first file to populate the inspector.
+        try:
+            page.click('.cl-card', timeout=2500)
+            page.wait_for_timeout(500)
+        except Exception as e:
+            print("collections file select skipped:", e)
+        shoot(page, "06-collections.png")
+
+        # ---- Settings: open the AI & Vision topic ----
+        page.click('.nav-item[data-view="settings"]')
+        page.wait_for_timeout(1000)
+        try:
+            page.click('[data-topic="ai"]', timeout=2500)
+            page.wait_for_timeout(500)
+        except Exception as e:
+            print("settings topic select skipped:", e)
+        shoot(page, "07-settings.png")
 
         browser.close()
     print("done")

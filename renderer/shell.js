@@ -136,7 +136,7 @@
   /* ---------------------------------------------------------------- *
    *  Navigation helper (handles lazy loading)
    * ---------------------------------------------------------------- */
-  const IMPLEMENTED_VIEWS = ['convert', 'batch', 'gallery', 'simulator', 'transfer']; // extend as phases are built
+  const IMPLEMENTED_VIEWS = ['convert', 'batch', 'gallery', 'collections', 'simulator', 'transfer', 'settings']; // extend as phases are built
 
   async function navigateTo(viewId) {
     if (!IMPLEMENTED_VIEWS.includes(viewId)) {

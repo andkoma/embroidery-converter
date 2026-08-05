@@ -187,6 +187,7 @@ function buildHTML() {
     </div>
     <div class="gv-marked-bar" id="gv-marked-bar">
       <span id="gv-marked-count" class="gv-marked-count"></span>
+      <button id="gv-send-collection" class="gv-send-batch gv-send-collection">${esc(t('gallery.sendToCollection'))}</button>
       <button id="gv-send-batch" class="gv-send-batch">${esc(t('gallery.sendToBatch'))} →</button>
     </div>
     <div id="gv-scan-status" class="gv-scan-status"></div>
@@ -836,6 +837,24 @@ function sendToBatch() {
   window.router && window.router.load('batch');
 }
 
+function sendToCollection() {
+  if (_marked.size === 0) return;
+  const byPath = new Map(_allFiles.map(f => [f.path, f]));
+  const files = Array.from(_marked).map((p) => {
+    const f = byPath.get(p) || {};
+    return {
+      path: p,
+      name: f.name || (p.split(/[\\/]/).pop()),
+      ext: f.ext || ((p.split('.').pop() || '').toLowerCase()),
+      mtime: f.mtime,
+      size: f.size,
+    };
+  });
+  window.store.set('collectionsQueue', files);
+  window.events && window.events.emit('gallery:send-to-collections', { files });
+  window.router && window.router.load('collections');
+}
+
 /* ------------------------------------------------------------------ *
  *  Detail modal
  * ------------------------------------------------------------------ */
@@ -935,6 +954,7 @@ function wireEvents() {
 
   // Send to batch
   document.getElementById('gv-send-batch')?.addEventListener('click', sendToBatch, { signal: sig });
+  document.getElementById('gv-send-collection')?.addEventListener('click', sendToCollection, { signal: sig });
 
   // Grid interactions (delegated: checkbox = mark, otherwise open detail)
   const grid = document.getElementById('gv-grid');

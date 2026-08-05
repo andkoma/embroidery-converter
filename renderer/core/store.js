@@ -142,6 +142,10 @@ const initialState = {
   // Batch hand-off queue — file paths marked in Gallery and sent to the Batch view.
   batchQueue: [],
 
+  // Collections hand-off queue — files marked in Gallery and sent to the
+  // Collections view. Each entry: { path, name, ext }.
+  collectionsQueue: [],
+
   // Preview cache (path → preview data)
   previewCache: new Map(),
 

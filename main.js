@@ -286,6 +286,25 @@ const SETTINGS_DEFAULTS = {
   transfer: {
     favoriteDestinations: [],  // { label, path }[]
   },
+  transferFavorites: [],       // { label, path }[] (legacy key used by transfer view)
+  conversion: {
+    defaultFormat: 'dst',
+    resample: false,
+    colorLimit: null,          // null = no limit
+    onConflict: 'suffix',      // suffix | overwrite | skip
+  },
+  ai: {
+    enabled: false,
+    provider: 'openai',        // openai | openai-compatible | ollama
+    endpoint: '',              // base URL for openai-compatible / ollama (blank = provider default)
+    apiKey: '',
+    model: 'gpt-4o-mini',
+    autoTag: true,             // suggest tags in addition to a category
+  },
+  // Collections tree — flat array of nodes with parentId (null = root).
+  // node: { id, name, parentId, files: [{path,name,ext}], tags: [], createdAt }
+  collections: [],
+  defaultMachine: '',          // default machine profile id for transfer
 };
 
 let _settingsCache = null;
@@ -651,6 +670,11 @@ ipcMain.handle('settings:get', async () => {
   return loadSettings();
 });
 
+/** Return the packaged application version (from package.json). */
+ipcMain.handle('app:getVersion', async () => {
+  try { return app.getVersion(); } catch (_) { return ''; }
+});
+
 /**
  * Patch-merge incoming updates into the stored settings and persist.
  * The renderer sends only the fields it wants to change; existing fields
@@ -664,6 +688,176 @@ ipcMain.handle('settings:set', async (_e, patch) => {
   // If the output dir changed, record it in the recents list too.
   if (patch.lastOutputDir) recordRecentOutputDir(patch.lastOutputDir);
   return { success: true };
+});
+
+/* ------------------------------------------------------------------ *
+ *  AI vision IPC (auto-classification & tagging for Collections)
+ *
+ *  Supports three provider modes, all configured in Settings → AI & Vision:
+ *    - openai            : the hosted OpenAI API (api.openai.com)
+ *    - openai-compatible : any server exposing /chat/completions (LM Studio,
+ *                          vLLM, LocalAI, OpenRouter, …) at a custom endpoint
+ *    - ollama            : a local Ollama daemon (/api/chat) for full offline
+ *                          privacy — thumbnails never leave the machine
+ *  Uses the global fetch bundled with Electron's Node (>=18). No extra deps.
+ * ------------------------------------------------------------------ */
+
+function aiConfig() {
+  const s = loadSettings();
+  return (s && s.ai) ? s.ai : {};
+}
+
+/** Resolve the base URL for the configured provider. */
+function aiBaseUrl(cfg) {
+  const provider = cfg.provider || 'openai';
+  const custom = (cfg.endpoint || '').trim().replace(/\/+$/, '');
+  if (provider === 'openai') return 'https://api.openai.com/v1';
+  if (provider === 'ollama') return custom || 'http://localhost:11434';
+  return custom; // openai-compatible — required
+}
+
+/** Split a data URL into { mime, base64 }. Accepts raw base64 too. */
+function splitDataUrl(dataUrl) {
+  const m = /^data:([^;]+);base64,(.*)$/i.exec(dataUrl || '');
+  if (m) return { mime: m[1], base64: m[2] };
+  return { mime: 'image/png', base64: (dataUrl || '').replace(/^data:.*?,/, '') };
+}
+
+/** Call an OpenAI-style /chat/completions endpoint with an image. */
+async function aiChatOpenAI(cfg, base, promptText, dataUrl) {
+  const url = base.replace(/\/+$/, '') + '/chat/completions';
+  const content = [{ type: 'text', text: promptText }];
+  if (dataUrl) content.push({ type: 'image_url', image_url: { url: dataUrl } });
+  const headers = { 'Content-Type': 'application/json' };
+  if (cfg.apiKey) headers['Authorization'] = 'Bearer ' + cfg.apiKey;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      model: cfg.model,
+      messages: [{ role: 'user', content }],
+      max_tokens: 300,
+      temperature: 0,
+    }),
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    throw new Error('HTTP ' + res.status + (txt ? ': ' + txt.slice(0, 300) : ''));
+  }
+  const data = await res.json();
+  return (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '';
+}
+
+/** Call a local Ollama /api/chat endpoint with an image. */
+async function aiChatOllama(cfg, base, promptText, dataUrl) {
+  const url = base.replace(/\/+$/, '') + '/api/chat';
+  const msg = { role: 'user', content: promptText };
+  if (dataUrl) msg.images = [splitDataUrl(dataUrl).base64];
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: cfg.model,
+      messages: [msg],
+      stream: false,
+      options: { temperature: 0 },
+    }),
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    throw new Error('HTTP ' + res.status + (txt ? ': ' + txt.slice(0, 300) : ''));
+  }
+  const data = await res.json();
+  return (data.message && data.message.content) || '';
+}
+
+/** Dispatch a single vision request to the configured provider. */
+async function aiVisionCall(cfg, promptText, dataUrl) {
+  const base = aiBaseUrl(cfg);
+  if (!base) throw new Error('No endpoint configured for the selected provider.');
+  if (!cfg.model) throw new Error('No model configured.');
+  if ((cfg.provider || 'openai') === 'ollama') {
+    return aiChatOllama(cfg, base, promptText, dataUrl);
+  }
+  return aiChatOpenAI(cfg, base, promptText, dataUrl);
+}
+
+/** Best-effort parse of a JSON object from a model response. */
+function parseAiJson(text) {
+  if (!text) return null;
+  let s = String(text).trim();
+  // Strip markdown code fences if present.
+  s = s.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+  try { return JSON.parse(s); } catch (_) {}
+  // Fall back to the first {...} block.
+  const m = /\{[\s\S]*\}/.exec(s);
+  if (m) { try { return JSON.parse(m[0]); } catch (_) {} }
+  return null;
+}
+
+/** Probe the configured provider with a tiny text request. */
+ipcMain.handle('ai:test', async () => {
+  const cfg = aiConfig();
+  if (!cfg.enabled) return { ok: false, error: 'AI features are disabled.' };
+  try {
+    const out = await aiVisionCall(cfg, 'Reply with the single word: ok', null);
+    return { ok: true, sample: String(out || '').slice(0, 120) };
+  } catch (e) {
+    return { ok: false, error: e.message || String(e) };
+  }
+});
+
+/**
+ * Classify & tag a batch of design thumbnails.
+ * payload: { items: [{ id, image(dataURL) }], categories: string[], autoTag: bool }
+ * returns: { ok, results: [{ id, category, tags }], error? }
+ */
+ipcMain.handle('ai:classify', async (_e, payload) => {
+  const cfg = aiConfig();
+  if (!cfg.enabled) return { ok: false, error: 'AI features are disabled.' };
+  const items = (payload && Array.isArray(payload.items)) ? payload.items : [];
+  const categories = (payload && Array.isArray(payload.categories) && payload.categories.length)
+    ? payload.categories
+    : ['Animals', 'Flowers', 'Lettering', 'Geometric', 'Holiday', 'Nautical', 'Other'];
+  const autoTag = payload ? payload.autoTag !== false : true;
+
+  const catList = categories.join(', ');
+  const tagLine = autoTag
+    ? ' Also provide up to 5 short lowercase descriptive tags (single words or short phrases).'
+    : ' Do not provide tags; return an empty tags array.';
+  const prompt =
+    'You are classifying an embroidery design shown in the image. ' +
+    'Choose the SINGLE best matching category from this list: ' + catList + '.' +
+    tagLine +
+    ' Respond ONLY with a compact JSON object of the form ' +
+    '{"category":"<one of the categories>","tags":["..."]} and nothing else.';
+
+  const results = [];
+  let anyOk = false;
+  let lastError = '';
+  for (const it of items) {
+    if (!it || !it.image) {
+      results.push({ id: it && it.id, category: '', tags: [], error: 'no-image' });
+      continue;
+    }
+    try {
+      const raw = await aiVisionCall(cfg, prompt, it.image);
+      const parsed = parseAiJson(raw) || {};
+      let category = typeof parsed.category === 'string' ? parsed.category.trim() : '';
+      // Snap to a known category (case-insensitive) when possible.
+      const match = categories.find((c) => c.toLowerCase() === category.toLowerCase());
+      if (match) category = match;
+      let tags = Array.isArray(parsed.tags) ? parsed.tags : [];
+      tags = tags.map((x) => String(x).trim().toLowerCase()).filter(Boolean).slice(0, 5);
+      if (!autoTag) tags = [];
+      results.push({ id: it.id, category, tags });
+      anyOk = true;
+    } catch (e) {
+      lastError = e.message || String(e);
+      results.push({ id: it.id, category: '', tags: [], error: lastError });
+    }
+  }
+  return { ok: anyOk, results, error: anyOk ? undefined : lastError };
 });
 
 /* ------------------------------------------------------------------ *
