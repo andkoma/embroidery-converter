@@ -206,4 +206,4 @@ jobs:
           draft: false
           prerelease: false
           generate_release_notes: true
-          token: ${{ secrets.GH_TOKEN }}
+          token: ${{ secrets.GH_TOKEN || github.token }}
