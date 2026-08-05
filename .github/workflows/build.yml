@@ -177,7 +177,8 @@ jobs:
           if (Test-Path "release") {
             Write-Host "Release folder exists"
             Get-ChildItem -Path release -Recurse -Force | ForEach-Object {
-              Write-Host "$($_.FullName) ($(if($_.PSIsContainer) { 'DIR' } else { $_.Length + ' bytes' }))"
+              $sizeLabel = if ($_.PSIsContainer) { 'DIR' } else { "$($_.Length) bytes" }
+              Write-Host "$($_.FullName) ($sizeLabel)"
             }
           } else {
             Write-Host "❌ Release folder DOES NOT exist!"
