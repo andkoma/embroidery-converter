@@ -166,6 +166,15 @@ jobs:
       - name: List downloaded artifacts
         run: find release-artifacts -type f -name "*.dmg" -o -name "*.exe" | xargs ls -lah
       
+      - name: Debug - Check token availability
+        run: |
+          if [ -z "${{ secrets.GH_TOKEN }}" ]; then
+            echo "⚠️ WARNING: GH_TOKEN secret is empty or not set!"
+            echo "Using fallback: GITHUB_TOKEN"
+          else
+            echo "✅ GH_TOKEN secret is available"
+          fi
+      
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
@@ -173,4 +182,4 @@ jobs:
           draft: false
           prerelease: false
           generate_release_notes: true
-          token: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GH_TOKEN }}
