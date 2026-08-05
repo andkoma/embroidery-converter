@@ -127,11 +127,21 @@ jobs:
       - name: Bundle Python backend
         run: npm run python:bundle
         
-      - name: List build artifacts
-        run: if (Test-Path "pybuild\dist") { dir pybuild\dist } else { Write-Host "No pybuild\dist yet" }
-      
       - name: Verify Python bundle exists
-        run: if (Test-Path "pybuild\dist\convert.exe") { Write-Host "✅ Python bundle exists" } else { Write-Host "❌ Python bundle missing" }
+        run: |
+          if (Test-Path "pybuild\dist\convert.exe") {
+            Write-Host "✅ Python bundle exists"
+            dir pybuild\dist\convert.exe
+          } else {
+            Write-Host "❌ ERROR: Python bundle missing! Expected pybuild\dist\convert.exe"
+            Write-Host "Contents of pybuild\dist:"
+            if (Test-Path "pybuild\dist") {
+              dir pybuild\dist
+            } else {
+              Write-Host "pybuild\dist directory does not exist"
+            }
+            exit 1
+          }
       
       - name: Build Windows
         env:
