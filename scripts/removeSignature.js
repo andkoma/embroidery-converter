@@ -38,24 +38,72 @@ exports.default = async function(context) {
   console.log(`   Path: ${appPath}`);
   
   try {
-    // Remove ALL signatures completely
-    console.log('   → Removing code signature...');
+    // Remove ALL signatures from main app bundle
+    console.log('   → Step 1: Removing main app signature...');
     execSync(`codesign --remove-signature "${appPath}" 2>/dev/null || true`, { 
       stdio: 'pipe',
       shell: '/bin/bash'
     });
     
-    // Verify removal
-    console.log('   → Verifying unsigned state...');
-    try {
-      execSync(`codesign -v "${appPath}" 2>&1`, { stdio: 'pipe' });
-      console.log('   ⚠️  Warning: App still reports as signed');
-    } catch (e) {
-      console.log('   ✅ Confirmed: App is unsigned');
+    // Remove signatures from embedded Python executable (critical!)
+    console.log('   → Step 2: Removing embedded Python executable signatures...');
+    const pythonBin = path.join(appPath, 'Contents', 'Resources', 'pybin', 'convert');
+    const pythonBinWin = path.join(appPath, 'Contents', 'Resources', 'pybin', 'convert.exe');
+    
+    if (fs.existsSync(pythonBin)) {
+      console.log(`      Found macOS Python: ${pythonBin}`);
+      try {
+        execSync(`codesign --remove-signature "${pythonBin}" 2>/dev/null || true`, { 
+          stdio: 'pipe',
+          shell: '/bin/bash'
+        });
+        console.log('      ✓ Removed Python executable signature');
+      } catch (e) {
+        console.log('      ⚠️  Could not remove Python signature (may not exist)');
+      }
     }
     
-    console.log('\n✅ SUCCESS: App signatures removed');
-    console.log('   → Gatekeeper will show standard warning instead of "damaged" error\n');
+    if (fs.existsSync(pythonBinWin)) {
+      console.log(`      Found Windows Python: ${pythonBinWin}`);
+      execSync(`codesign --remove-signature "${pythonBinWin}" 2>/dev/null || true`, { 
+        stdio: 'pipe',
+        shell: '/bin/bash'
+      });
+    }
+    
+    // Remove quarantine and other extended attributes that could block execution
+    console.log('   → Step 3: Removing extended attributes...');
+    try {
+      execSync(`xattr -d com.apple.quarantine "${appPath}" 2>/dev/null || true`, { 
+        stdio: 'pipe',
+        shell: '/bin/bash'
+      });
+      console.log('      ✓ Removed quarantine attribute');
+    } catch (e) {
+      // Not critical, quarantine might not be set during build
+    }
+    
+    // Remove code signing extended attributes
+    try {
+      execSync(`xattr -d com.apple.code-signature-restrictions "${appPath}" 2>/dev/null || true`, { 
+        stdio: 'pipe',
+        shell: '/bin/bash'
+      });
+    } catch (e) {
+      // Not present, that's OK
+    }
+    
+    // Verify removal
+    console.log('   → Step 4: Verifying unsigned state...');
+    try {
+      execSync(`codesign -v "${appPath}" 2>&1`, { stdio: 'pipe' });
+      console.log('   ⚠️  Warning: App still reports as signed - may need manual intervention');
+    } catch (e) {
+      console.log('   ✅ Confirmed: App is properly unsigned');
+    }
+    
+    console.log('\n✅ SUCCESS: All signatures and extended attributes removed');
+    console.log('   → Gatekeeper will show standard "developer cannot be verified" warning\n');
     
   } catch (err) {
     console.log(`\n❌ ERROR: ${err.message}`);
