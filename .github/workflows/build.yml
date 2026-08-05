@@ -147,18 +147,38 @@ jobs:
           retention-days: 7
           if-no-files-found: warn
       
-      - name: List release artifacts
-        run: if (Test-Path "release") { dir release } else { Write-Host "No release folder" }
+      - name: Debug - Check release folder structure
+        run: |
+          Write-Host "=== Checking release folder ==="
+          if (Test-Path "release") {
+            Write-Host "Release folder exists"
+            Get-ChildItem -Path release -Recurse -Force | ForEach-Object {
+              Write-Host $_.FullName
+            }
+          } else {
+            Write-Host "❌ Release folder DOES NOT exist!"
+          }
+          
+          Write-Host ""
+          Write-Host "=== Checking for any .exe files ==="
+          $exeFiles = Get-ChildItem -Path . -Name -Recurse -Include *.exe -ErrorAction SilentlyContinue
+          if ($exeFiles) {
+            Write-Host "Found .exe files:"
+            $exeFiles | ForEach-Object { Write-Host "  $_" }
+          } else {
+            Write-Host "No .exe files found anywhere"
+          }
       
       - name: Find EXE file
         id: find_exe
         run: |
-          $exeFile = Get-ChildItem -Path release -Name -Recurse -Include *.exe | Select-Object -First 1
+          $exeFile = Get-ChildItem -Path release -Name -Recurse -Include *.exe -ErrorAction SilentlyContinue | Select-Object -First 1
           if ($exeFile) {
-            Write-Host "Found EXE: $exeFile"
+            Write-Host "✅ Found EXE: $exeFile"
             Write-Host "exe_file=$exeFile" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           } else {
-            Write-Host "No EXE file found"
+            Write-Host "❌ No EXE file found in release folder"
+            Write-Host "exe_file=" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           }
       
       - name: Upload Windows artifact
