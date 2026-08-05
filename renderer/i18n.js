@@ -74,6 +74,30 @@ const I18N = {
     'progress.finished': 'Finished — {ok} converted, {failed} failed.',
 
     'preview.none': 'No preview',
+
+    // Batch view
+    'batch.sources': 'Source Folders',
+    'batch.addFolder': 'Add folders',
+    'batch.refresh': 'Re-scan folders',
+    'batch.noFolders': 'No folders added yet. Click + to add folders.',
+    'batch.search': 'Search by name…',
+    'batch.scanning': 'Scanning…',
+    'batch.files': '{n} files',
+    'batch.selected': '{n} selected',
+    'batch.selectAll': 'Select all',
+    'batch.convertBtn': 'Convert Selected',
+    'batch.converting': 'Converting…',
+    'batch.profile': 'Batch Profile',
+    'batch.outputFormat': 'Output Format',
+    'batch.outputFolder': 'Output Folder',
+    'batch.sameAsSource': 'Same as source',
+    'batch.resize': 'Resize',
+    'batch.colorLimit': 'Color Limit',
+    'batch.conflicts': 'Conflicts',
+    'batch.suffix': 'Add suffix',
+    'batch.overwrite': 'Overwrite existing',
+    'batch.skip': 'Skip file',
+    'batch.complete': 'Conversion complete!\n{ok} succeeded, {failed} failed.',
   },
 
   de: {
@@ -140,6 +164,30 @@ const I18N = {
     'progress.finished': 'Fertig — {ok} konvertiert, {failed} fehlgeschlagen.',
 
     'preview.none': 'Keine Vorschau',
+
+    // Batch view
+    'batch.sources': 'Quellordner',
+    'batch.addFolder': 'Ordner hinzufügen',
+    'batch.refresh': 'Ordner neu scannen',
+    'batch.noFolders': 'Noch keine Ordner hinzugefügt. Klicken Sie auf +, um Ordner hinzuzufügen.',
+    'batch.search': 'Nach Name suchen…',
+    'batch.scanning': 'Scanne…',
+    'batch.files': '{n} Dateien',
+    'batch.selected': '{n} ausgewählt',
+    'batch.selectAll': 'Alle auswählen',
+    'batch.convertBtn': 'Ausgewählte konvertieren',
+    'batch.converting': 'Konvertiere…',
+    'batch.profile': 'Stapelprofil',
+    'batch.outputFormat': 'Ausgabeformat',
+    'batch.outputFolder': 'Ausgabeordner',
+    'batch.sameAsSource': 'Wie Quelle',
+    'batch.resize': 'Größe ändern',
+    'batch.colorLimit': 'Farblimit',
+    'batch.conflicts': 'Konflikte',
+    'batch.suffix': 'Suffix hinzufügen',
+    'batch.overwrite': 'Vorhandene überschreiben',
+    'batch.skip': 'Datei überspringen',
+    'batch.complete': 'Konvertierung abgeschlossen!\n{ok} erfolgreich, {failed} fehlgeschlagen.',
   },
 
   fr: {
@@ -206,6 +254,30 @@ const I18N = {
     'progress.finished': 'Terminé — {ok} converti(s), {failed} échec(s).',
 
     'preview.none': 'Aucun aperçu',
+
+    // Batch view
+    'batch.sources': 'Dossiers source',
+    'batch.addFolder': 'Ajouter des dossiers',
+    'batch.refresh': 'Réanalyser les dossiers',
+    'batch.noFolders': 'Aucun dossier ajouté. Cliquez sur + pour ajouter des dossiers.',
+    'batch.search': 'Rechercher par nom…',
+    'batch.scanning': 'Analyse…',
+    'batch.files': '{n} fichiers',
+    'batch.selected': '{n} sélectionné(s)',
+    'batch.selectAll': 'Tout sélectionner',
+    'batch.convertBtn': 'Convertir la sélection',
+    'batch.converting': 'Conversion…',
+    'batch.profile': 'Profil de lot',
+    'batch.outputFormat': 'Format de sortie',
+    'batch.outputFolder': 'Dossier de sortie',
+    'batch.sameAsSource': 'Identique à la source',
+    'batch.resize': 'Redimensionner',
+    'batch.colorLimit': 'Limite de couleurs',
+    'batch.conflicts': 'Conflits',
+    'batch.suffix': 'Ajouter un suffixe',
+    'batch.overwrite': 'Écraser l\'existant',
+    'batch.skip': 'Ignorer le fichier',
+    'batch.complete': 'Conversion terminée !\n{ok} réussi(s), {failed} échec(s).',
   },
 };
 

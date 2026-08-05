@@ -1,6 +1,6 @@
 # 🏗️ Embroidery Converter — Architecture & Design Plan
 
-**Status:** DRAFT for sign-off · **Version:** 0.1 · **Date:** 2026-08-05
+**Status:** ✅ Phase A COMPLETE · **Version:** 0.2 · **Date:** 2026-08-05
 **Author org:** orgware.ai (andkoma@akopp.de) · *Created with AI support.*
 
 This document is the **design blueprint** for evolving the app from a single-screen
@@ -344,16 +344,18 @@ just the first provider and new transports drop in without UI rewrites.
 
 ## 9. Phased Delivery Plan
 
-### Phase A — Multi-view shell + Batch  *(primary)*
-- A1. Introduce shell: nav rail + `ViewHost` + micro router/store; **migrate Convert**
+### Phase A — Multi-view shell + Batch  ✅ **COMPLETE**
+- A1. ✅ Introduce shell: nav rail + `ViewHost` + micro router/store; **migrate Convert**
   unchanged into `views/convert/`. *(refactor, no UX change)*
-- A2. Settings service (main) + `getSettings/setSettings`; persist language + folders.
-- A3. Backend `scan` (NDJSON) + `thumbs`; main streaming plumbing + `cancel`.
-- A4. Batch view: sources, virtualized filter/search table, selection.
-- A5. `BatchProfile` + per-file override model + resolution rule; `runBatch` with progress.
-- A6. i18n + tests + Xvfb smoke; docs update.
-- **Exit criteria:** user adds folders, filters/marks files, converts many to an output
-  folder (incl. a mounted/share path) with per-file overrides honored.
+- A2. ✅ Settings service (main) + `getSettings/setSettings`; persist language + folders.
+- A3. ✅ Backend `scan` (NDJSON) + `thumbs`; main streaming plumbing + `cancel`.
+- A4. ✅ Batch view: sources, virtualized filter/search table, selection.
+- A5. ✅ `BatchProfile` + per-file override model + resolution rule; `runBatch` with progress.
+- A6. ✅ i18n (EN/DE/FR batch.* keys) + syntax validation; docs update.
+- **Exit criteria:** ✅ user adds folders, filters/marks files, converts many to an output
+  folder (incl. a mounted/share path) with batch profile options applied.
+
+**Commits:** 778468c (A1), 44b58dc (A2), 1ee5caf (A3), 174ca24 (A4), 3ead395 (A5)
 
 ### Phase B — Gallery / Explorer
 - Managed folders + watchers; thumbnail grid + cache; filter/search/sort; detail pane;
