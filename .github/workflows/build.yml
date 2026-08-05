@@ -172,10 +172,10 @@ jobs:
       - name: Find EXE file
         id: find_exe
         run: |
-          $exeFile = Get-ChildItem -Path release -Name -Recurse -Include *.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+          $exeFile = Get-ChildItem -Path release -File -Recurse -Include *.exe -ErrorAction SilentlyContinue | Select-Object -First 1
           if ($exeFile) {
-            Write-Host "✅ Found EXE: $exeFile"
-            Write-Host "exe_file=$exeFile" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+            Write-Host "✅ Found EXE: $($exeFile.FullName)"
+            Write-Host "exe_file=$($exeFile.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           } else {
             Write-Host "❌ No EXE file found in release folder"
             Write-Host "exe_file=" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
