@@ -245,31 +245,42 @@ jobs:
       - name: Find EXE file
         id: find_exe
         run: |
-          Write-Host "=== Searching for .exe file ==="
-          $exeFiles = @(Get-ChildItem -Path release -File -Recurse -Include "*.exe" -ErrorAction SilentlyContinue)
-          Write-Host "Found $($exeFiles.Count) .exe file(s)"
+          Write-Host "=== Searching for NSIS Installer ==="
+          # First try to find NSIS installer (Setup*.exe or *Setup*.exe)
+          $installerFiles = @(Get-ChildItem -Path release -File -Recurse -Include "*Setup*.exe", "*setup*.exe" -ErrorAction SilentlyContinue)
           
-          if ($exeFiles.Count -gt 0) {
-            $exeFile = $exeFiles[0]
-            Write-Host "✅ EXE found: $($exeFile.FullName)"
+          if ($installerFiles.Count -gt 0) {
+            # Use the largest one if multiple found
+            $exeFile = $installerFiles | Sort-Object -Property Length -Descending | Select-Object -First 1
+            Write-Host "✅ NSIS Installer found: $($exeFile.FullName)"
             Write-Host "  Size: $([Math]::Round($exeFile.Length/1MB, 2))MB"
-            
-            # Store path with forward slashes for GitHub Actions compatibility
-            $exePath = $exeFile.FullName -replace '\\', '/'
-            Write-Host "Stored path: $exePath"
             
             "exe_file=$($exeFile.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
             "exe_found=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           } else {
-            Write-Host "❌ No .exe file found in release folder!"
-            Write-Host "Release folder contents:"
-            if (Test-Path "release") {
-              Get-ChildItem -Path release -Recurse -File | ForEach-Object {
-                Write-Host "  - $($_.FullName) ($([Math]::Round($_.Length/1MB, 2))MB)"
+            Write-Host "⚠️  No NSIS installer found, searching for any .exe file..."
+            $exeFiles = @(Get-ChildItem -Path release -File -Recurse -Include "*.exe" -ErrorAction SilentlyContinue)
+            Write-Host "Found $($exeFiles.Count) .exe file(s)"
+            
+            if ($exeFiles.Count -gt 0) {
+              # Use the largest .exe file (installer is larger than raw executable)
+              $exeFile = $exeFiles | Sort-Object -Property Length -Descending | Select-Object -First 1
+              Write-Host "✅ Largest EXE found: $($exeFile.FullName)"
+              Write-Host "  Size: $([Math]::Round($exeFile.Length/1MB, 2))MB"
+              
+              "exe_file=$($exeFile.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+              "exe_found=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+            } else {
+              Write-Host "❌ No .exe file found in release folder!"
+              Write-Host "Release folder contents:"
+              if (Test-Path "release") {
+                Get-ChildItem -Path release -Recurse -File | ForEach-Object {
+                  Write-Host "  - $($_.FullName) ($([Math]::Round($_.Length/1MB, 2))MB)"
+                }
               }
+              "exe_found=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+              exit 1
             }
-            "exe_found=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-            exit 1
           }
       
       - name: Upload Windows artifact
