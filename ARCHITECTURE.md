@@ -1,6 +1,6 @@
 # 🏗️ Embroidery Converter — Architecture & Design Plan
 
-**Status:** ✅ Phase A COMPLETE · **Version:** 0.2 · **Date:** 2026-08-05
+**Status:** ✅ Phase A & B COMPLETE · **Version:** 0.3 · **Date:** 2026-08-05
 **Author org:** orgware.ai (andkoma@akopp.de) · *Created with AI support.*
 
 This document is the **design blueprint** for evolving the app from a single-screen
@@ -355,11 +355,22 @@ just the first provider and new transports drop in without UI rewrites.
 - **Exit criteria:** ✅ user adds folders, filters/marks files, converts many to an output
   folder (incl. a mounted/share path) with batch profile options applied.
 
-**Commits:** 778468c (A1), 44b58dc (A2), 1ee5caf (A3), 174ca24 (A4), 3ead395 (A5)
+**Commits:** 778468c (A1), 44b58dc (A2), 1ee5caf (A3), 174ca24 (A4), 3ead395 (A5), 4ec7a3a (A6)
 
-### Phase B — Gallery / Explorer
-- Managed folders + watchers; thumbnail grid + cache; filter/search/sort; detail pane;
-  hand-off actions to Convert/Batch/Simulator. Exit: browse & inspect large libraries fluidly.
+### Phase B — Gallery / Explorer  ✅ **COMPLETE**
+- B1. ✅ Gallery view skeleton with three-panel layout (Folders | Grid | Detail)
+- B2. ✅ Managed folders with add/remove + persistence via settings.galleryFolders
+- B3. ✅ Folder scanning using existing NDJSON streaming backend
+- B4. ✅ Filter chips by extension, search bar, sort options (name/size/stitches)
+- B5. ✅ Thumbnail grid with IntersectionObserver lazy loading (viewport-aware)
+- B6. ✅ Detail pane with large preview, metadata, and hand-off actions
+- B7. ✅ i18n (EN/DE/FR gallery.* keys) + syntax validation
+
+**Exit criteria:** ✅ user adds folders, scans files, filters/searches, views lazy-loaded
+thumbnails in grid, clicks for detail view with metadata and actions (Send to
+Convert/Batch/Simulator, Show in Folder).
+
+**Commits:** 0b05d79 (B1: skeleton + folder mgmt), [B2: lazy loading + i18n]
 
 ### Phase C — Stitch Simulator
 - `simulate` timeline; canvas player with scrub/speed/color-jump. Exit: smooth playback of

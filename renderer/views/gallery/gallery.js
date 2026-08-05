@@ -15,6 +15,7 @@
 
 let _abortCtrl = null;
 let _scanRequestId = null;
+let _thumbObserver = null; // IntersectionObserver for lazy thumbnail loading
 
 // State
 let _managedFolders = [];  // [{path, label}]
@@ -30,6 +31,9 @@ export async function mount() {
   
   injectCSS();
   document.getElementById('view-host').innerHTML = buildHTML();
+  
+  // Initialize lazy loading observer for thumbnails
+  initThumbObserver();
   
   // Restore managed folders from settings
   const settings = await window.api.getSettings();
@@ -48,6 +52,10 @@ export function unmount() {
   if (_scanRequestId) {
     window.api.cancelStream(_scanRequestId);
     _scanRequestId = null;
+  }
+  if (_thumbObserver) {
+    _thumbObserver.disconnect();
+    _thumbObserver = null;
   }
   if (_abortCtrl) {
     _abortCtrl.abort();
@@ -338,6 +346,14 @@ function injectCSS() {
   color: var(--muted, #8b949e);
   font-size: 10px;
 }
+.gv-thumb-placeholder:first-child:last-child {
+  /* Loading animation for lazy-loaded thumbs */
+  animation: gv-pulse 1.5s ease-in-out infinite;
+}
+@keyframes gv-pulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.7; }
+}
 
 .gv-grid-label {
   width: 100%;
@@ -453,6 +469,44 @@ function injectCSS() {
 
 function removeCSS() {
   document.getElementById('gv-styles')?.remove();
+}
+
+/* ------------------------------------------------------------------ *
+ *  Lazy loading observer for thumbnails
+ * ------------------------------------------------------------------ */
+function initThumbObserver() {
+  if (!window.IntersectionObserver) {
+    console.warn('IntersectionObserver not available, thumbnails will load immediately');
+    return;
+  }
+  
+  _thumbObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        const thumb = entry.target;
+        const previewData = thumb.dataset.preview;
+        
+        if (previewData && previewData !== 'null') {
+          try {
+            const preview = JSON.parse(previewData);
+            thumb.innerHTML = renderPreview(preview);
+          } catch (err) {
+            console.error('Error parsing preview data:', err);
+            thumb.innerHTML = '<span class="gv-thumb-placeholder">Preview error</span>';
+          }
+        } else {
+          thumb.innerHTML = '<span class="gv-thumb-placeholder">No preview</span>';
+        }
+        
+        // Stop observing once loaded
+        _thumbObserver.unobserve(thumb);
+      }
+    });
+  }, {
+    root: document.getElementById('gv-grid'),
+    rootMargin: '100px', // Pre-load 100px before entering viewport
+    threshold: 0.01
+  });
 }
 
 /* ------------------------------------------------------------------ *
@@ -626,13 +680,38 @@ function renderGrid() {
       item.classList.add('selected');
     }
     
-    item.innerHTML = `
-      <div class="gv-thumb">
-        ${file.preview ? renderPreview(file.preview) : '<span class="gv-thumb-placeholder">No preview</span>'}
-      </div>
-      <div class="gv-grid-label" title="${file.name}">${file.name}</div>
-      <div class="gv-grid-ext">${file.ext.toUpperCase()}</div>
-    `;
+    const thumb = document.createElement('div');
+    thumb.className = 'gv-thumb';
+    
+    // Store preview data for lazy loading
+    if (file.preview) {
+      thumb.dataset.preview = JSON.stringify(file.preview);
+      thumb.innerHTML = '<span class="gv-thumb-placeholder">⋯</span>'; // Loading placeholder
+      
+      // Observe for lazy loading
+      if (_thumbObserver) {
+        _thumbObserver.observe(thumb);
+      } else {
+        // Fallback: load immediately if observer not available
+        thumb.innerHTML = renderPreview(file.preview);
+      }
+    } else {
+      thumb.innerHTML = '<span class="gv-thumb-placeholder">No preview</span>';
+    }
+    
+    item.appendChild(thumb);
+    
+    const label = document.createElement('div');
+    label.className = 'gv-grid-label';
+    label.title = file.name;
+    label.textContent = file.name;
+    item.appendChild(label);
+    
+    const ext = document.createElement('div');
+    ext.className = 'gv-grid-ext';
+    ext.textContent = file.ext.toUpperCase();
+    item.appendChild(ext);
+    
     frag.appendChild(item);
   });
   
