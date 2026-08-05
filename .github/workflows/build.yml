@@ -164,7 +164,7 @@ jobs:
           path: ./release-artifacts
       
       - name: List downloaded artifacts
-        run: find release-artifacts -type f -name "*.dmg" -o -name "*.exe" | xargs ls -lah
+        run: find release-artifacts -type f \( -name "*.dmg" -o -name "*.exe" \) -exec ls -lah {} +
       
       - name: Debug - Check token availability
         run: |
