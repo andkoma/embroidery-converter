@@ -19,6 +19,20 @@ const BV_EXTS  = ['dst', 'pes', 'pec', 'jef', 'vp3', 'hus', 'xxx', 'exp', 'sew',
 const ROW_H    = 36;   // px — virtual row height
 const BUF_ROWS = 8;    // extra rows to render above/below viewport
 const STYLE_ID = 'bv-styles';
+const SEP = (window.api && window.api.platform === 'win32') ? '\\' : '/';
+
+/* ------------------------------------------------------------------ *
+ *  Path helpers (shared display logic with Gallery)
+ * ------------------------------------------------------------------ */
+function bvSplitPath(p) { return String(p || '').split(/[\\/]+/).filter(Boolean); }
+function bvTailLabel(p) { const parts = bvSplitPath(p); return parts.slice(-2).join(SEP) || p; }
+function bvFolderLabel(f) { return (f.alias && f.alias.trim()) ? f.alias.trim() : bvTailLabel(f.path); }
+function bvBelongsTo(filePath, folderPath) {
+  const a = String(filePath || ''), b = String(folderPath || '');
+  return a === b || a.startsWith(b + '/') || a.startsWith(b + '\\') ||
+         a.startsWith(b.endsWith(SEP) ? b : b + SEP);
+}
+function bvMkId() { return Date.now().toString(36) + Math.random().toString(36).slice(2); }
 
 /* ------------------------------------------------------------------ *
  *  Module-level state (fully reset on each mount)
@@ -27,7 +41,7 @@ let _container = null;
 let _store     = null;
 let _abortCtrl = null;
 
-let _folders   = [];         // { id, path, recursive }[]
+let _folders   = [];         // { id, path, recursive, alias }[]
 let _allFiles  = [];         // FileEntry[] — full scan results
 let _filtered  = [];         // FileEntry[] — after search + ext filter
 let _selected  = new Set();  // selected file paths (Set<string>)
@@ -254,7 +268,12 @@ function injectStyles() {
 .bv-folder-path {
   flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   color: var(--text, #1a2340); font-size: 12px;
-  direction: rtl; text-align: left;
+  direction: ltr; text-align: left; cursor: pointer;
+}
+.bv-folder-alias-input {
+  flex: 1; min-width: 0; font-size: 12px; padding: 2px 4px;
+  border: 1px solid var(--accent, #4a6ef5); border-radius: 4px;
+  background: var(--input-bg, #fff); color: var(--text, #1a2340); outline: none;
 }
 .bv-remove-btn {
   flex-shrink: 0; border: none; background: none; cursor: pointer;
@@ -548,7 +567,7 @@ function renderFolders() {
            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
         <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
       </svg>
-      <span class="bv-folder-path" title="${f.path}">${f.path}</span>
+      <span class="bv-folder-path bv-folder-label" data-id="${f.id}" title="${f.path}">${bvFolderLabel(f)}</span>
       <button class="bv-remove-btn" data-id="${f.id}" title="Remove">×</button>
     </li>
   `).join('');
@@ -563,10 +582,7 @@ async function addFolders() {
   let added = false;
   for (const p of paths) {
     if (!_folders.some(f => f.path === p)) {
-      _folders.push({
-        id: Date.now().toString(36) + Math.random().toString(36).slice(2),
-        path: p, recursive: true,
-      });
+      _folders.push({ id: bvMkId(), path: p, recursive: true, alias: '' });
       added = true;
     }
   }
@@ -594,10 +610,41 @@ function persistFolders() {
   window.api.setSettings({ managedFolders: _folders }).catch(() => {});
 }
 
+/** Inline-edit a folder's display alias (double-click on the label). */
+function beginAliasEdit(id) {
+  const folder = _folders.find(f => f.id === id);
+  const labelEl = document.querySelector(`.bv-folder-label[data-id="${CSS.escape(id)}"]`);
+  if (!folder || !labelEl) return;
+
+  const input = document.createElement('input');
+  input.className = 'bv-folder-alias-input';
+  input.value = folder.alias || bvTailLabel(folder.path);
+  input.title = folder.path;
+  labelEl.replaceWith(input);
+  input.focus();
+  input.select();
+
+  const commit = () => {
+    folder.alias = input.value.trim();
+    persistFolders();
+    renderFolders();
+  };
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); commit(); }
+    else if (e.key === 'Escape') { renderFolders(); }
+  });
+  input.addEventListener('blur', commit);
+}
+
 /* ------------------------------------------------------------------ *
  *  Scanning
  * ------------------------------------------------------------------ */
-async function startScan() {
+/**
+ * Scan managed folders, using the shared store-backed cache to skip folders
+ * whose directory mtime is unchanged since the last scan.
+ * @param {boolean} forceAll  when true, ignore the cache and re-scan everything
+ */
+async function startScan(forceAll) {
   // Cancel any running scan
   if (_scanReqId) {
     await window.api.cancelStream(_scanReqId).catch(() => {});
@@ -614,16 +661,46 @@ async function startScan() {
     return;
   }
 
+  // Partition folders into cache-hits (reuse) and misses (need scan)
+  const cache = window.store.get('scanCache', {}) || {};
+  const toScan = [];
+  const keep = [];
+
+  for (const folder of _folders) {
+    let stat = { exists: true, mtime: 0 };
+    try { stat = await window.api.statDir(folder.path); } catch (_) {}
+    const entry = cache[folder.path];
+    if (forceAll !== true && entry && Array.isArray(entry.files) &&
+        stat.exists && entry.dirMtime === stat.mtime) {
+      keep.push(...entry.files);          // cache hit — folder unchanged
+    } else {
+      toScan.push({ path: folder.path, mtime: stat.mtime });
+    }
+  }
+
+  // Restore statuses/selection markers for kept files (fresh pending state)
+  _allFiles = keep.map(f => ({ ...f, status: f.status || 'pending' }));
+
+  if (toScan.length === 0) {
+    _scanning = false;
+    setScanStatus('');
+    applyFilter(); renderRows(); updateCounts();
+    return;
+  }
+
   _scanning = true;
-  _allFiles = [];
   setScanStatus('<span class="bv-spin">⟳</span> Scanning…');
 
-  const opts = { folders: _folders.map(f => f.path), recursive: true };
-  let lastRenderCount = 0;
+  const opts = { folders: toScan.map(t => t.path), recursive: true };
+  const mtimeByFolder = new Map(toScan.map(t => [t.path, t.mtime]));
+  const collected = [];
+  let lastRenderCount = _allFiles.length;
 
   _scanReqId = await window.api.scanFolders(opts, (data) => {
     if (data.type === 'file') {
-      _allFiles.push({ ...data, status: 'pending' });
+      const entry = { ...data, status: 'pending' };
+      collected.push(entry);
+      _allFiles.push(entry);
       // Throttle re-renders: every 100 new files
       if (_allFiles.length - lastRenderCount >= 100) {
         lastRenderCount = _allFiles.length;
@@ -635,6 +712,16 @@ async function startScan() {
       _scanning  = false;
       _scanReqId = null;
       setScanStatus('');
+      // Update cache: bucket freshly-collected files per scanned folder
+      const c = window.store.get('scanCache', {}) || {};
+      for (const t of toScan) {
+        c[t.path] = {
+          files: collected.filter(f => bvBelongsTo(f.path, t.path)),
+          scannedAt: Date.now(),
+          dirMtime: mtimeByFolder.get(t.path),
+        };
+      }
+      window.store.set('scanCache', c);
       applyFilter(); renderRows(); updateCounts();
     }
   }).catch(err => {
@@ -695,13 +782,20 @@ function wireEvents() {
     ?.addEventListener('click', addFolders, { signal: sig });
 
   document.getElementById('bv-refresh-btn')
-    ?.addEventListener('click', startScan, { signal: sig });
+    ?.addEventListener('click', () => startScan(true), { signal: sig });
 
   // Remove folder (delegated)
   document.getElementById('bv-folder-list')
     ?.addEventListener('click', e => {
       const btn = e.target.closest('.bv-remove-btn');
       if (btn) removeFolder(btn.dataset.id);
+    }, { signal: sig });
+
+  // Double-click folder label → inline alias edit
+  document.getElementById('bv-folder-list')
+    ?.addEventListener('dblclick', e => {
+      const label = e.target.closest('.bv-folder-label');
+      if (label) beginAliasEdit(label.dataset.id);
     }, { signal: sig });
 
   // ── Table controls ──
@@ -819,19 +913,26 @@ function mount(container, store) {
   renderRows();
   updateCounts();
 
+  // Consume any hand-off queue from Gallery ("Send to Batch")
+  const queue = window.store.get('batchQueue', []) || [];
+  if (Array.isArray(queue) && queue.length > 0) {
+    _selected = new Set(queue);
+    window.store.set('batchQueue', []);   // clear after consuming
+  }
+
   // Load persisted folders from settings, then scan
   window.api.getSettings().then(s => {
     const saved = s && s.managedFolders;
     if (Array.isArray(saved) && saved.length > 0) {
       _folders = saved.map(f =>
         typeof f === 'string'
-          ? { id: Date.now().toString(36) + Math.random().toString(36).slice(2), path: f, recursive: true }
-          : { id: f.id || (Date.now().toString(36) + Math.random().toString(36).slice(2)), path: f.path, recursive: f.recursive !== false }
+          ? { id: bvMkId(), path: f, recursive: true, alias: '' }
+          : { id: f.id || bvMkId(), path: f.path, recursive: f.recursive !== false, alias: f.alias || '' }
       );
       renderFolders();
       syncRefreshBtn();
       // Wait for layout before scanning
-      requestAnimationFrame(startScan);
+      requestAnimationFrame(() => startScan(false));
     }
   }).catch(() => {});
 }

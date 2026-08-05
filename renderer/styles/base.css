@@ -13,6 +13,28 @@
   --success: #1f9d55;
   --error: #d64545;
   --warn: #c78a1b;
+
+  /* ----------------------------------------------------------------- *
+   *  Light-theme aliases
+   *  Several views (gallery, simulator, transfer) reference these var
+   *  names with DARK fallbacks. Defining them here (light values) forces
+   *  a consistent light theme across every panel/view. The purple nav
+   *  rail keeps its own gradient and is unaffected by these.
+   * ----------------------------------------------------------------- */
+  --fg: #1c2333;
+  --panel-bg: #ffffff;
+  --surface: #f4f6fb;
+  --muted: #6b7385;
+  --input-bg: #ffffff;
+  --hover-bg: #f0f2f9;
+  --panel-header-bg: #f9fafd;
+  --chip-bg: #f0f2f9;
+  --row-border: #f0f2f8;
+  --row-hover: #f7f9fd;
+  --row-sel: #eef2fe;
+  --accent-subtle: #eef1fd;
+  --error-hover: #b83232;
+
   --radius: 12px;
   --shadow: 0 1px 3px rgba(20, 25, 40, 0.06), 0 6px 20px rgba(20, 25, 40, 0.05);
   font-size: 14px;

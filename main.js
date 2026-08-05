@@ -8,6 +8,7 @@
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const { spawn, spawnSync } = require('child_process');
 
 const isDev = process.argv.includes('--dev') || !app.isPackaged;
@@ -863,4 +864,163 @@ ipcMain.handle('backend:cancel', async (_e, { requestId }) => {
     return { success: true };
   }
   return { success: false, reason: 'not-found' };
+});
+
+/* ------------------------------------------------------------------ *
+ *  Thumbnail cache
+ *
+ *  Thumbnails (metadata + vector preview polylines produced by the
+ *  Python backend) are cached on disk in the platform userData dir —
+ *  NEVER inside the user's source folders. Cache entries are keyed by a
+ *  SHA-256 hash of the source path + its last-modified time, so a file
+ *  that changes on disk automatically invalidates its cached thumbnail.
+ * ------------------------------------------------------------------ */
+
+function thumbcacheDir() {
+  const dir = path.join(app.getPath('userData'), 'thumbcache');
+  try { fs.mkdirSync(dir, { recursive: true }); } catch (_) {}
+  return dir;
+}
+
+/** SHA-256 hash of "<path>|<mtime>" — the cache key for a file's thumbnail. */
+function thumbHash(filePath, mtime) {
+  return crypto.createHash('sha256')
+    .update(String(filePath) + '|' + String(mtime || 0))
+    .digest('hex');
+}
+
+function thumbCachePath(filePath, mtime) {
+  return path.join(thumbcacheDir(), thumbHash(filePath, mtime) + '.json');
+}
+
+function readThumbCache(filePath, mtime) {
+  try {
+    const raw = fs.readFileSync(thumbCachePath(filePath, mtime), 'utf8');
+    return JSON.parse(raw);
+  } catch (_) {
+    return null;
+  }
+}
+
+function writeThumbCache(filePath, mtime, data) {
+  try {
+    fs.writeFileSync(thumbCachePath(filePath, mtime), JSON.stringify(data), 'utf8');
+  } catch (e) {
+    console.error('Failed to write thumb cache:', e.message);
+  }
+}
+
+/**
+ * Spawn the backend once to generate thumbnails for the given paths.
+ * Resolves with a Map<path, { meta, preview }>. Never rejects — missing
+ * or failed paths are simply absent from the returned map.
+ */
+function spawnThumbsOnce(paths) {
+  return new Promise((resolve) => {
+    const backend = resolveBackend();
+    const out = new Map();
+    if (!backend || !paths || paths.length === 0) { resolve(out); return; }
+
+    const args = [...backend.baseArgs, 'thumbs', JSON.stringify({ paths })];
+    let child;
+    try {
+      child = spawn(backend.command, args, { windowsHide: true });
+    } catch (_) { resolve(out); return; }
+
+    let buf = '';
+    child.stdout.on('data', (chunk) => {
+      buf += chunk.toString();
+      const lines = buf.split('\n');
+      buf = lines.pop();
+      for (const line of lines) {
+        const s = line.trim();
+        if (!s) continue;
+        try {
+          const d = JSON.parse(s);
+          if (d.type === 'thumb') out.set(d.path, { meta: d.meta || {}, preview: d.preview || null });
+        } catch (_) {}
+      }
+    });
+    child.on('close', () => {
+      const s = buf.trim();
+      if (s) { try { const d = JSON.parse(s); if (d.type === 'thumb') out.set(d.path, { meta: d.meta || {}, preview: d.preview || null }); } catch (_) {} }
+      resolve(out);
+    });
+    child.on('error', () => resolve(out));
+  });
+}
+
+/**
+ * Return a directory's last-modified time (ms). Used by Gallery/Batch to
+ * decide whether a folder needs re-scanning. Returns { mtime, exists }.
+ */
+ipcMain.handle('fs:statDir', async (_e, dirPath) => {
+  try {
+    const st = fs.statSync(dirPath);
+    return { exists: true, mtime: st.mtimeMs, isDir: st.isDirectory() };
+  } catch (_) {
+    return { exists: false, mtime: 0, isDir: false };
+  }
+});
+
+/**
+ * Get a single cached thumbnail (metadata + vector preview) for a file.
+ * If not cached, generate it via the backend, cache it, and return it.
+ * Returns { meta, preview } or null.
+ */
+ipcMain.handle('thumbnail:get', async (_e, { path: filePath, mtime }) => {
+  const cached = readThumbCache(filePath, mtime);
+  if (cached) return cached;
+  const map = await spawnThumbsOnce([filePath]);
+  const data = map.get(filePath);
+  if (data) { writeThumbCache(filePath, mtime, data); return data; }
+  return null;
+});
+
+/**
+ * Streaming thumbnail generation with disk caching.
+ *
+ * payload.items: [{ path, mtime }]
+ * Emits (via backend:stream, keyed by requestId):
+ *   { type:'thumb', path, meta, preview, cached:bool } per file
+ *   { type:'done' } when finished
+ *
+ * Cache hits are emitted immediately; only cache misses are sent to the
+ * Python backend, and their results are written back to the cache.
+ */
+ipcMain.handle('backend:thumbsCached', async (_e, { requestId, items }) => {
+  const _send = (data) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('backend:stream', { requestId, data });
+    }
+  };
+
+  const list = Array.isArray(items) ? items : [];
+  const mtimeByPath = new Map();
+  const misses = [];
+
+  for (const it of list) {
+    if (!it || !it.path) continue;
+    mtimeByPath.set(it.path, it.mtime);
+    const cached = readThumbCache(it.path, it.mtime);
+    if (cached) {
+      _send({ type: 'thumb', path: it.path, meta: cached.meta, preview: cached.preview, cached: true });
+    } else {
+      misses.push(it.path);
+    }
+  }
+
+  if (misses.length > 0) {
+    const map = await spawnThumbsOnce(misses);
+    for (const p of misses) {
+      const data = map.get(p);
+      if (data) {
+        writeThumbCache(p, mtimeByPath.get(p), data);
+        _send({ type: 'thumb', path: p, meta: data.meta, preview: data.preview, cached: false });
+      }
+    }
+  }
+
+  _send({ type: 'done', count: list.length });
+  return { started: true, requestId };
 });

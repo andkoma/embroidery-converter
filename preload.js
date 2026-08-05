@@ -89,6 +89,35 @@ contextBridge.exposeInMainWorld('api', {
   },
 
   /**
+   * Generate thumbnails with disk caching (userData/thumbcache). Cache hits
+   * are returned instantly; only changed/new files hit the Python backend.
+   * @param {{path:string, mtime:number}[]} items
+   * @param {function} onThumb  Called for each NDJSON line (thumb / done).
+   * @returns {Promise<string>} requestId
+   */
+  getThumbsCached: async (items, onThumb) => {
+    const requestId = _newReqId();
+    _streamCallbacks.set(requestId, onThumb);
+    await ipcRenderer.invoke('backend:thumbsCached', { requestId, items: items || [] });
+    return requestId;
+  },
+
+  /**
+   * Get one cached thumbnail (generate + cache on miss).
+   * @param {string} path
+   * @param {number} mtime
+   * @returns {Promise<{meta:object, preview:object}|null>}
+   */
+  getThumbnail: (path, mtime) => ipcRenderer.invoke('thumbnail:get', { path, mtime }),
+
+  /**
+   * Stat a directory to detect changes (for scan-cache invalidation).
+   * @param {string} dirPath
+   * @returns {Promise<{exists:boolean, mtime:number, isDir:boolean}>}
+   */
+  statDir: (dirPath) => ipcRenderer.invoke('fs:statDir', dirPath),
+
+  /**
    * Run a batch conversion job.
    * @param {{ files: object[], profile: object }} job
    * @param {function} onProgress  Called for each progress event (running/done/error/skipped).

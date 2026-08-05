@@ -134,6 +134,14 @@ const initialState = {
   // Files (FileRecord[]) - shared across views
   files: [],
 
+  // Scan cache — folder path → { files: FileEntry[], scannedAt: number, dirMtime: number }
+  // Lets Gallery/Batch skip re-scanning folders that have not changed since the
+  // last scan. Survives view switching because it lives in the shared store.
+  scanCache: {},
+
+  // Batch hand-off queue — file paths marked in Gallery and sent to the Batch view.
+  batchQueue: [],
+
   // Preview cache (path → preview data)
   previewCache: new Map(),
 
@@ -157,6 +165,12 @@ const initialState = {
  * Global store instance.
  */
 const store = new Store(initialState);
+
+// Expose globally so lazily-loaded view scripts can reliably access the shared
+// store via window.store (in addition to the bare `store` script-scope global).
+if (typeof window !== 'undefined') {
+  window.store = store;
+}
 
 // Export for use in views/components
 if (typeof module !== 'undefined' && module.exports) {
