@@ -173,6 +173,11 @@
     await router.navigate(viewId);
   }
 
+  // Expose the router + a shell-aware `load` helper so views can trigger
+  // navigation (with lazy script loading + nav-rail highlight) during hand-off.
+  router.load = (viewId) => navigateTo(viewId);
+  window.router = router;
+
   function phaseLabel(viewId) {
     return { batch:'A (Batch)', gallery:'B (Gallery)', simulator:'C (Simulator)', transfer:'D (Transfer)' }[viewId] || '?';
   }

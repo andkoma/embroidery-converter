@@ -37,6 +37,29 @@ supports 80+ embroidery formats.
 
 ---
 
+## 🖼️ Application Overview
+
+Embroidery Converter is a **multi-panel workstation** with five purpose-built
+views — **Convert**, **Batch**, **Gallery**, **Simulator** and **Transfer** —
+sharing one backend, one data model and a fully translated (EN/DE/FR) UI.
+
+**Convert** — add files, tune per-file options, convert to any target format:
+
+![Convert view](docs/screenshots/01-convert.png)
+
+**Gallery** — browse managed folders with lazy-loaded previews and a detail pane:
+
+![Gallery view](docs/screenshots/03-gallery.png)
+
+**Simulator** — animated stitch-by-stitch playback in real thread colors:
+
+![Simulator view](docs/screenshots/04-simulator.png)
+
+👉 **[See the full application guide with every view](./APPLICATION.md)** (Batch &
+Transfer included).
+
+---
+
 ## Features
 
 - **Drag & drop** any number of embroidery files onto the window (or browse).
@@ -280,7 +303,7 @@ This project uses **GitHub Actions** for automatic cross-platform builds:
 
 **Quick start:**
 ```bash
-git tag v1.0.1
+git tag v1.1.0
 git push --tags
 ```
 → Builds trigger automatically, results appear in Releases tab after ~15 minutes.

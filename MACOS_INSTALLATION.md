@@ -5,7 +5,7 @@ Dieses Dokument erklärt, wie Sie die Embroidery Converter Anwendung auf Ihrem M
 ### 📋 Voraussetzungen
 
 - **macOS 10.13+** (High Sierra oder neuer)
-- Die DMG-Datei: `Embroidery Converter-1.0.0-arm64.dmg`
+- Die DMG-Datei: `Embroidery Converter-1.1.0-arm64.dmg`
 
 ### 📥 Installation (WICHTIG - bitte genau folgen!)
 
@@ -13,7 +13,7 @@ Dieses Dokument erklärt, wie Sie die Embroidery Converter Anwendung auf Ihrem M
 
 1. Öffnen Sie **Finder**
 2. Navigieren Sie zu **Downloads**
-3. Doppelklicken Sie auf `Embroidery Converter-1.0.0-arm64.dmg`
+3. Doppelklicken Sie auf `Embroidery Converter-1.1.0-arm64.dmg`
 4. Das Installationsfenster erscheint
 
 #### Schritt 2: App in Applications kopieren
@@ -128,5 +128,5 @@ A: Das ist eine macOS-Sicherheitsfunktion für nicht-signierte Apps. Ohne Develo
 
 ---
 
-**Version:** 1.0.0  
+**Version:** 1.1.0  
 **Letzte Aktualisierung:** August 2026

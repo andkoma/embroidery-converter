@@ -10,11 +10,11 @@ This guide walks you through creating **lightweight installers** for Windows 11 
 
 ## 🎯 What You'll Get
 
-- **Windows:** `Embroidery Converter Setup 1.0.0.exe` (~100 MB)
+- **Windows:** `Embroidery Converter Setup 1.1.0.exe` (~100 MB)
   - NSIS installer with desktop shortcut
   - Requires Python 3.7+ on user's machine
   
-- **macOS:** `Embroidery Converter-1.0.0.dmg` (~120 MB)
+- **macOS:** `Embroidery Converter-1.1.0.dmg` (~120 MB)
   - Drag-to-install DMG package
   - Requires Python 3.7+ on user's machine
 
@@ -112,12 +112,12 @@ npm run build:win
 
 **Expected output:**
 ```
-• building        target=nsis file=release\Embroidery Converter Setup 1.0.0.exe
-• building block map  blockMapFile=release\Embroidery Converter Setup 1.0.0.exe.blockmap
+• building        target=nsis file=release\Embroidery Converter Setup 1.1.0.exe
+• building block map  blockMapFile=release\Embroidery Converter Setup 1.1.0.exe.blockmap
 ```
 
 **Build time:** 2-4 minutes  
-**Installer location:** `release/Embroidery Converter Setup 1.0.0.exe`  
+**Installer location:** `release/Embroidery Converter Setup 1.1.0.exe`  
 **Size:** ~100 MB
 
 ---
@@ -134,12 +134,12 @@ npm run build:mac
 
 **Expected output:**
 ```
-• building        target=macOS zip arch=x64 file=release/mac/Embroidery Converter-1.0.0.zip
-• building        target=DMG arch=x64 file=release/Embroidery Converter-1.0.0.dmg
+• building        target=macOS zip arch=x64 file=release/mac/Embroidery Converter-1.1.0.zip
+• building        target=DMG arch=x64 file=release/Embroidery Converter-1.1.0.dmg
 ```
 
 **Build time:** 4-7 minutes  
-**Installer location:** `release/Embroidery Converter-1.0.0.dmg`  
+**Installer location:** `release/Embroidery Converter-1.1.0.dmg`  
 **Size:** ~120 MB
 
 ---

@@ -1,3 +1,5 @@
+(function () {
+'use strict';
 /**
  * Gallery View — Browse embroidery files with thumbnail grid
  *
@@ -15,6 +17,7 @@
 
 let _abortCtrl = null;
 let _scanRequestId = null;
+let _thumbRequestId = null;
 let _thumbObserver = null; // IntersectionObserver for lazy thumbnail loading
 
 // State
@@ -26,11 +29,12 @@ let _selected = null;      // FileEntry currently shown in detail pane
 /* ------------------------------------------------------------------ *
  *  Lifecycle
  * ------------------------------------------------------------------ */
-export async function mount() {
+async function mount(container) {
   _abortCtrl = new AbortController();
   
   injectCSS();
-  document.getElementById('view-host').innerHTML = buildHTML();
+  const host = container || document.getElementById('viewHost');
+  host.innerHTML = buildHTML();
   
   // Initialize lazy loading observer for thumbnails
   initThumbObserver();
@@ -48,10 +52,14 @@ export async function mount() {
   }
 }
 
-export function unmount() {
+function unmount() {
   if (_scanRequestId) {
     window.api.cancelStream(_scanRequestId);
     _scanRequestId = null;
+  }
+  if (_thumbRequestId) {
+    window.api.cancelStream(_thumbRequestId);
+    _thumbRequestId = null;
   }
   if (_thumbObserver) {
     _thumbObserver.disconnect();
@@ -587,11 +595,47 @@ async function scanAllFolders() {
         _scanRequestId = null;
         if (statusEl) statusEl.textContent = `${_allFiles.length} files found`;
         applyFilters();
+        loadThumbnails();
       }
     });
   } catch (err) {
     console.error('Scan error:', err);
     if (statusEl) statusEl.textContent = 'Scan failed';
+  }
+}
+
+/**
+ * Fetch preview polylines + metadata for all scanned files and merge
+ * them into the file entries, then re-render the grid.
+ */
+async function loadThumbnails() {
+  if (_allFiles.length === 0) return;
+  const paths = _allFiles.map(f => f.path);
+  const byPath = new Map(_allFiles.map(f => [f.path, f]));
+  try {
+    _thumbRequestId = await window.api.makeThumbs(paths, (entry) => {
+      if (entry.type === 'thumb') {
+        const f = byPath.get(entry.path);
+        if (f) {
+          f.preview = entry.preview || null;
+          const m = entry.meta || {};
+          f.stitches = m.stitch_count;
+          f.colors = m.color_count;
+          f.width = m.width_mm;
+          f.height = m.height_mm;
+          f.threads = m.threads || [];
+        }
+      } else if (entry.type === 'done') {
+        _thumbRequestId = null;
+        applyFilters();
+        if (_selected) {
+          const sel = byPath.get(_selected.path);
+          if (sel) showDetail(sel);
+        }
+      }
+    });
+  } catch (err) {
+    console.error('Thumbnail error:', err);
   }
 }
 
@@ -719,18 +763,26 @@ function renderGrid() {
 }
 
 function renderPreview(preview) {
-  if (!preview || !preview.polylines) return '<span class="gv-thumb-placeholder">No preview</span>';
+  // Backend preview shape (from convert.py _preview_polylines):
+  //   { left, top, width, height, lines: [{ hex, pts: [[x,y], ...] }] }  (1/10 mm units)
+  if (!preview || !Array.isArray(preview.lines) || preview.lines.length === 0) {
+    return '<span class="gv-thumb-placeholder">No preview</span>';
+  }
   
-  const { bounds, polylines } = preview;
-  const [minX, minY, maxX, maxY] = bounds;
-  const width = maxX - minX;
-  const height = maxY - minY;
-  const viewBox = `${minX} ${minY} ${width} ${height}`;
+  const left = preview.left || 0;
+  const top = preview.top || 0;
+  const width = preview.width || 1;
+  const height = preview.height || 1;
+  const viewBox = `${left} ${top} ${width} ${height}`;
+  // Scale stroke to the design size so thin previews stay visible.
+  const strokeW = Math.max(Math.max(width, height) / 120, 0.4);
   
-  const paths = polylines.map(line => {
-    const d = line.points.map((pt, i) => `${i === 0 ? 'M' : 'L'}${pt[0]},${pt[1]}`).join(' ');
-    const color = line.thread?.hex || '#888';
-    return `<path d="${d}" stroke="${color}" fill="none" stroke-width="0.3"/>`;
+  const paths = preview.lines.map(line => {
+    const pts = line.pts || [];
+    if (pts.length < 2) return '';
+    const d = pts.map((pt, i) => `${i === 0 ? 'M' : 'L'}${pt[0]},${pt[1]}`).join(' ');
+    const color = line.hex || '#888';
+    return `<path d="${d}" stroke="${color}" fill="none" stroke-width="${strokeW.toFixed(2)}" stroke-linecap="round" stroke-linejoin="round"/>`;
   }).join('');
   
   return `<svg viewBox="${viewBox}" preserveAspectRatio="xMidYMid meet">${paths}</svg>`;
@@ -873,3 +925,4 @@ function wireEvents() {
  *  Register with shell router
  * ------------------------------------------------------------------ */
 window.registerView('gallery', { mount, unmount });
+})();

@@ -36,7 +36,7 @@ npm install
 del /Q pybuild\dist\convert*
 npm run build:win
 ```
-**Output:** `release\Embroidery Converter Setup 1.0.0.exe` (~100 MB)
+**Output:** `release\Embroidery Converter Setup 1.1.0.exe` (~100 MB)
 
 #### Option 2 (Self-Contained):
 ```cmd
@@ -45,7 +45,7 @@ pip install pyinstaller
 npm run python:bundle
 npm run build:win
 ```
-**Output:** `release\Embroidery Converter Setup 1.0.0.exe` (~150 MB)
+**Output:** `release\Embroidery Converter Setup 1.1.0.exe` (~150 MB)
 
 ---
 
@@ -57,7 +57,7 @@ npm install
 rm -rf pybuild/dist/convert*
 npm run build:mac
 ```
-**Output:** `release/Embroidery Converter-1.0.0.dmg` (~120 MB)
+**Output:** `release/Embroidery Converter-1.1.0.dmg` (~120 MB)
 
 #### Option 2 (Self-Contained):
 ```bash
@@ -66,7 +66,7 @@ pip3 install pyinstaller
 npm run python:bundle
 npm run build:mac
 ```
-**Output:** `release/Embroidery Converter-1.0.0.dmg` (~180 MB)
+**Output:** `release/Embroidery Converter-1.1.0.dmg` (~180 MB)
 
 ---
 
@@ -150,7 +150,7 @@ zip -r embroidery_converter.zip embroidery_converter/ \
    - **Option 1:** Follow [BUILD_OPTION1.md](./BUILD_OPTION1.md)
    - **Option 2:** Follow [BUILD.md](./BUILD.md)
 
-4. **Result:** `release\Embroidery Converter Setup 1.0.0.exe`
+4. **Result:** `release\Embroidery Converter Setup 1.1.0.exe`
 
 ---
 
@@ -170,7 +170,7 @@ zip -r embroidery_converter.zip embroidery_converter/ \
    - **Option 1:** Follow [BUILD_OPTION1.md](./BUILD_OPTION1.md)
    - **Option 2:** Follow [BUILD.md](./BUILD.md)
 
-4. **Result:** `release/Embroidery Converter-1.0.0.dmg`
+4. **Result:** `release/Embroidery Converter-1.1.0.dmg`
 
 ---
 
@@ -195,8 +195,8 @@ Before distributing, run through [PREFLIGHT_CHECKLIST.md](./PREFLIGHT_CHECKLIST.
 
 | Platform | File | Size | User Requirement |
 |----------|------|------|------------------|
-| Windows | `Embroidery Converter Setup 1.0.0.exe` | ~100 MB | Python 3.7+ |
-| macOS | `Embroidery Converter-1.0.0.dmg` | ~120 MB | Python 3.7+ |
+| Windows | `Embroidery Converter Setup 1.1.0.exe` | ~100 MB | Python 3.7+ |
+| macOS | `Embroidery Converter-1.1.0.dmg` | ~120 MB | Python 3.7+ |
 
 **Backend mode:** `system-python`
 
@@ -206,8 +206,8 @@ Before distributing, run through [PREFLIGHT_CHECKLIST.md](./PREFLIGHT_CHECKLIST.
 
 | Platform | File | Size | User Requirement |
 |----------|------|------|------------------|
-| Windows | `Embroidery Converter Setup 1.0.0.exe` | ~150 MB | None |
-| macOS | `Embroidery Converter-1.0.0.dmg` | ~180 MB | None |
+| Windows | `Embroidery Converter Setup 1.1.0.exe` | ~150 MB | None |
+| macOS | `Embroidery Converter-1.1.0.dmg` | ~180 MB | None |
 
 **Backend mode:** `bundled`
 
@@ -224,18 +224,18 @@ npm install
 # Build Option 1
 del /Q pybuild\dist\convert*
 npm run build:win
-ren "release\Embroidery Converter Setup 1.0.0.exe" "Embroidery Converter 1.0.0 Lightweight.exe"
+ren "release\Embroidery Converter Setup 1.1.0.exe" "Embroidery Converter 1.1.0 Lightweight.exe"
 
 # Build Option 2
 pip install pyinstaller
 npm run python:bundle
 npm run build:win
-ren "release\Embroidery Converter Setup 1.0.0.exe" "Embroidery Converter 1.0.0 Professional.exe"
+ren "release\Embroidery Converter Setup 1.1.0.exe" "Embroidery Converter 1.1.0 Professional.exe"
 ```
 
 **Result:**
-- `Embroidery Converter 1.0.0 Lightweight.exe` (100 MB, requires Python)
-- `Embroidery Converter 1.0.0 Professional.exe` (150 MB, self-contained)
+- `Embroidery Converter 1.1.0 Lightweight.exe` (100 MB, requires Python)
+- `Embroidery Converter 1.1.0 Professional.exe` (150 MB, self-contained)
 
 ---
 
@@ -362,7 +362,7 @@ Before starting builds on Windows/macOS:
 ---
 
 **Build Date:** 2026-08-05  
-**Project Version:** 1.0.0  
+**Project Version:** 1.1.0  
 **Build Status:** ✅ **PRODUCTION READY**
 
 *Copyright © 2024 orgware.ai (andkoma@akopp.de). Created with AI support.*

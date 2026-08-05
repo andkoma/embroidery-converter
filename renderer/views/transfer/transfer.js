@@ -1,3 +1,5 @@
+(function () {
+'use strict';
 /**
  * Transfer View — Send embroidery files to machines
  *
@@ -28,11 +30,12 @@ let _transferInProgress = false;
 /* ------------------------------------------------------------------ *
  *  Lifecycle
  * ------------------------------------------------------------------ */
-export async function mount() {
+async function mount(container) {
   _abortCtrl = new AbortController();
   
   injectCSS();
-  document.getElementById('view-host').innerHTML = buildHTML();
+  const host = container || document.getElementById('viewHost');
+  host.innerHTML = buildHTML();
   
   wireEvents();
   
@@ -45,7 +48,7 @@ export async function mount() {
   loadFavorites();
 }
 
-export function unmount() {
+function unmount() {
   window.events?.off('gallery:send-to-transfer', handleGalleryHandoff);
   window.events?.off('batch:send-to-transfer', handleBatchHandoff);
   
@@ -1042,3 +1045,4 @@ function formatBytes(bytes) {
  *  Register with shell router
  * ------------------------------------------------------------------ */
 window.registerView('transfer', { mount, unmount });
+})();

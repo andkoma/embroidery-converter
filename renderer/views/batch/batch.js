@@ -1,3 +1,5 @@
+(function () {
+'use strict';
 /**
  * renderer/views/batch/batch.js — Batch conversion panel
  * Copyright © 2026 orgware.ai (andkoma@akopp.de)
@@ -849,3 +851,4 @@ function unmount() {
 }
 
 window.registerView('batch', { mount, unmount });
+})();

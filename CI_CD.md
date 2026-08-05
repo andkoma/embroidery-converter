@@ -20,7 +20,7 @@ This project uses **GitHub Actions** to automatically build and release installe
 File: `.github/workflows/build.yml`
 
 **Triggers:**
-- Push a version tag: `git tag v1.0.1 && git push --tags`
+- Push a version tag: `git tag v1.1.0 && git push --tags`
 - Manual trigger: GitHub Actions tab → "Run workflow"
 
 ### 2. **Build Matrix**
@@ -65,7 +65,7 @@ After all builds complete, if triggered by a **version tag**:
 
 ```bash
 # Create a version tag
-git tag v1.0.1
+git tag v1.1.0
 git push --tags
 ```
 

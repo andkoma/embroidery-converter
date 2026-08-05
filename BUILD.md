@@ -8,11 +8,11 @@ This guide walks you through creating **self-contained installers** for Windows 
 
 ## 🎯 What You'll Get
 
-- **Windows:** `Embroidery Converter Setup 1.0.0.exe` (~150 MB)
+- **Windows:** `Embroidery Converter Setup 1.1.0.exe` (~150 MB)
   - NSIS installer with desktop shortcut
   - Works on any Windows 11/10 machine (no Python required)
   
-- **macOS:** `Embroidery Converter-1.0.0.dmg` (~180 MB)
+- **macOS:** `Embroidery Converter-1.1.0.dmg` (~180 MB)
   - Drag-to-install DMG package
   - Works on macOS 10.13+ (no Python required)
 
@@ -166,12 +166,12 @@ npm run build:win
 
 **Expected output:**
 ```
-• building        target=nsis file=release\Embroidery Converter Setup 1.0.0.exe
-• building block map  blockMapFile=release\Embroidery Converter Setup 1.0.0.exe.blockmap
+• building        target=nsis file=release\Embroidery Converter Setup 1.1.0.exe
+• building block map  blockMapFile=release\Embroidery Converter Setup 1.1.0.exe.blockmap
 ```
 
 **Build time:** 3-5 minutes  
-**Installer location:** `release/Embroidery Converter Setup 1.0.0.exe`  
+**Installer location:** `release/Embroidery Converter Setup 1.1.0.exe`  
 **Size:** ~150 MB
 
 ---
@@ -188,12 +188,12 @@ npm run build:mac
 
 **Expected output:**
 ```
-• building        target=macOS zip arch=x64 file=release/mac/Embroidery Converter-1.0.0.zip
-• building        target=DMG arch=x64 file=release/Embroidery Converter-1.0.0.dmg
+• building        target=macOS zip arch=x64 file=release/mac/Embroidery Converter-1.1.0.zip
+• building        target=DMG arch=x64 file=release/Embroidery Converter-1.1.0.dmg
 ```
 
 **Build time:** 5-8 minutes  
-**Installer location:** `release/Embroidery Converter-1.0.0.dmg`  
+**Installer location:** `release/Embroidery Converter-1.1.0.dmg`  
 **Size:** ~180 MB
 
 ---
@@ -237,7 +237,7 @@ The app will be automatically signed and notarized.
 We've set up GitHub Actions to automatically build for macOS and Windows. See [.github/workflows/build.yml](.github/workflows/build.yml).
 
 **Trigger a build:**
-1. Push a tag: `git tag v1.0.1 && git push --tags`
+1. Push a tag: `git tag v1.1.0 && git push --tags`
 2. Or manually: GitHub → Actions → Run workflow
 
 **Get installers:**
@@ -397,8 +397,8 @@ After successful build:
 ```
 embroidery_converter/
 ├── release/
-│   ├── Embroidery Converter Setup 1.0.0.exe    (Windows installer)
-│   ├── Embroidery Converter-1.0.0.dmg          (macOS installer)
+│   ├── Embroidery Converter Setup 1.1.0.exe    (Windows installer)
+│   ├── Embroidery Converter-1.1.0.dmg          (macOS installer)
 │   ├── win-unpacked/                            (Windows app contents)
 │   └── mac/                                     (macOS app contents)
 ├── pybuild/

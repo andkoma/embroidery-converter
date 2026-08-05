@@ -1,3 +1,5 @@
+(function () {
+'use strict';
 /**
  * Simulator View — Stitch-by-stitch playback of embroidery files
  *
@@ -20,10 +22,11 @@ let _canvas = null;
 let _ctx = null;
 
 // Animation state
-let _file = null;            // Current embroidery file data (from inspect)
-let _stitches = [];          // Array of [x, y, flags] from file data
-let _colors = [];            // Array of {hex, name, index} color blocks
-let _currentIndex = 0;       // Current stitch being drawn
+let _file = null;            // Current embroidery file metadata (from inspect)
+let _segments = [];          // [{hex, pts:[[x,y]...], startIndex, endIndex}]
+let _totalPoints = 0;        // Total number of preview points across all segments
+let _colors = [];            // Array of {hex, name, startIndex, endIndex, stitchCount}
+let _currentIndex = 0;       // Current point index being drawn (0.._totalPoints-1)
 let _isPlaying = false;      // Animation playing state
 let _speed = 1;              // Playback speed multiplier
 let _lastFrameTime = 0;      // For frame timing
@@ -38,11 +41,12 @@ let _offsetY = 0;
 /* ------------------------------------------------------------------ *
  *  Lifecycle
  * ------------------------------------------------------------------ */
-export async function mount() {
+async function mount(container) {
   _abortCtrl = new AbortController();
   
   injectCSS();
-  document.getElementById('view-host').innerHTML = buildHTML();
+  const host = container || document.getElementById('viewHost');
+  host.innerHTML = buildHTML();
   
   // Get canvas references
   _canvas = document.getElementById('sim-canvas');
@@ -66,7 +70,7 @@ export async function mount() {
   }
 }
 
-export function unmount() {
+function unmount() {
   stopAnimation();
   
   window.events?.off('gallery:send-to-simulator', handleGalleryHandoff);
@@ -81,7 +85,8 @@ export function unmount() {
   _canvas = null;
   _ctx = null;
   _file = null;
-  _stitches = [];
+  _segments = [];
+  _totalPoints = 0;
   _colors = [];
   _currentIndex = 0;
 }
@@ -479,7 +484,7 @@ function resizeCanvas() {
   const maxWidth = rect.width - 40;
   const maxHeight = rect.height - 40;
   
-  if (_bounds && _stitches.length > 0) {
+  if (_bounds && _totalPoints > 0) {
     // Fit stitches to canvas
     const width = _bounds.maxX - _bounds.minX;
     const height = _bounds.maxY - _bounds.minY;
@@ -512,41 +517,33 @@ function clearCanvas() {
 }
 
 function redrawCanvas() {
-  if (!_ctx || !_stitches.length) return;
+  if (!_ctx || _totalPoints === 0) return;
   
   clearCanvas();
   
-  // Draw all stitches up to current index
+  // Draw all segments' points up to the current global point index.
   _ctx.save();
   _ctx.translate(_offsetX, _offsetY);
   _ctx.scale(_scale, _scale);
   
-  let currentColor = null;
-  _ctx.lineWidth = 0.3 / _scale; // Thin lines
+  _ctx.lineWidth = Math.max(0.6 / _scale, 0.5); // Thread thickness (pattern units)
   _ctx.lineCap = 'round';
   _ctx.lineJoin = 'round';
   
-  for (let i = 0; i <= _currentIndex && i < _stitches.length; i++) {
-    const stitch = _stitches[i];
-    const [x, y, flags] = stitch;
+  for (const seg of _segments) {
+    if (seg.startIndex > _currentIndex) break; // segments are ordered
+    const pts = seg.pts;
+    // How many points of this segment are visible?
+    const visible = Math.min(pts.length, _currentIndex - seg.startIndex + 1);
+    if (visible < 2) continue;
     
-    // Check for color change
-    if (flags & 0x01 || i === 0) { // STITCH or COLOR_CHANGE
-      const colorBlock = _colors.find(c => i >= c.startIndex && i <= c.endIndex);
-      if (colorBlock && colorBlock.hex !== currentColor) {
-        currentColor = colorBlock.hex;
-        _ctx.strokeStyle = currentColor;
-      }
+    _ctx.strokeStyle = seg.hex || '#333333';
+    _ctx.beginPath();
+    _ctx.moveTo(pts[0][0], pts[0][1]);
+    for (let j = 1; j < visible; j++) {
+      _ctx.lineTo(pts[j][0], pts[j][1]);
     }
-    
-    // Draw stitch
-    if (i > 0 && !(flags & 0x10)) { // Not a MOVE (0x10 = move without stitching)
-      const prev = _stitches[i - 1];
-      _ctx.beginPath();
-      _ctx.moveTo(prev[0], prev[1]);
-      _ctx.lineTo(x, y);
-      _ctx.stroke();
-    }
+    _ctx.stroke();
   }
   
   _ctx.restore();
@@ -569,20 +566,45 @@ async function loadFile(filePath) {
     }
     
     _file = result;
-    _stitches = result.stitches || [];
+    // Derive name/ext from the file path (inspect returns neither).
+    const baseName = filePath.split(/[\\/]/).pop() || filePath;
+    const dotIdx = baseName.lastIndexOf('.');
+    _file.name = baseName;
+    _file.path = filePath;
+    _file.ext = dotIdx >= 0 ? baseName.slice(dotIdx + 1) : '';
     _currentIndex = 0;
     _isPlaying = false;
     
-    // Calculate bounds
-    if (_stitches.length > 0) {
-      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-      _stitches.forEach(([x, y]) => {
-        minX = Math.min(minX, x);
-        minY = Math.min(minY, y);
-        maxX = Math.max(maxX, x);
-        maxY = Math.max(maxY, y);
+    // Build render segments from the backend preview polylines.
+    // preview = { left, top, width, height, lines: [{hex, pts:[[x,y]...]}] }  (1/10 mm units)
+    const preview = result.preview || {};
+    const lines = Array.isArray(preview.lines) ? preview.lines : [];
+    _segments = [];
+    _totalPoints = 0;
+    for (const line of lines) {
+      const pts = Array.isArray(line.pts) ? line.pts : [];
+      if (pts.length === 0) continue;
+      const startIndex = _totalPoints;
+      const endIndex = startIndex + pts.length - 1;
+      _segments.push({
+        hex: line.hex || '#333333',
+        pts,
+        startIndex,
+        endIndex
       });
-      _bounds = { minX, minY, maxX, maxY };
+      _totalPoints += pts.length;
+    }
+    
+    // Bounds come directly from the preview extents.
+    if (typeof preview.left === 'number' && typeof preview.width === 'number') {
+      _bounds = {
+        minX: preview.left,
+        minY: preview.top,
+        maxX: preview.left + preview.width,
+        maxY: preview.top + preview.height
+      };
+    } else {
+      _bounds = null;
     }
     
     // Extract color blocks
@@ -608,45 +630,27 @@ async function loadFile(filePath) {
 }
 
 function extractColorBlocks() {
-  if (!_file || !_file.palette || !_stitches.length) return [];
+  if (!_segments.length) return [];
   
   const blocks = [];
-  let currentColorIndex = 0;
-  let blockStart = 0;
+  let current = null;
   
-  for (let i = 0; i < _stitches.length; i++) {
-    const flags = _stitches[i][2];
-    
-    // COLOR_CHANGE flag (0x01) or STOP (0x02)
-    if ((flags & 0x01) || (flags & 0x02)) {
-      // Finalize previous block
-      if (i > blockStart) {
-        const color = _file.palette[currentColorIndex] || { hex: '#000000', name: 'Unknown' };
-        blocks.push({
-          hex: color.hex,
-          name: color.name,
-          startIndex: blockStart,
-          endIndex: i - 1,
-          stitchCount: i - blockStart
-        });
-      }
-      
-      // Start new block
-      currentColorIndex++;
-      blockStart = i;
+  for (const seg of _segments) {
+    const count = seg.endIndex - seg.startIndex + 1;
+    if (current && current.hex === seg.hex) {
+      // Merge consecutive segments sharing the same thread color.
+      current.endIndex = seg.endIndex;
+      current.stitchCount += count;
+    } else {
+      current = {
+        hex: seg.hex,
+        name: seg.hex,
+        startIndex: seg.startIndex,
+        endIndex: seg.endIndex,
+        stitchCount: count
+      };
+      blocks.push(current);
     }
-  }
-  
-  // Finalize last block
-  if (blockStart < _stitches.length) {
-    const color = _file.palette[currentColorIndex] || { hex: '#000000', name: 'Unknown' };
-    blocks.push({
-      hex: color.hex,
-      name: color.name,
-      startIndex: blockStart,
-      endIndex: _stitches.length - 1,
-      stitchCount: _stitches.length - blockStart
-    });
   }
   
   return blocks;
@@ -659,16 +663,21 @@ function updateFileInfo() {
     nameEl.title = _file.path || '';
   }
   
+  // Real stitch count from the backend, falling back to preview point count.
+  const stitchCount = (typeof _file?.stitch_count === 'number') ? _file.stitch_count : _totalPoints;
+  
   const totalEl = document.getElementById('sim-total-stitches');
-  if (totalEl) totalEl.textContent = _stitches.length.toLocaleString();
+  if (totalEl) totalEl.textContent = stitchCount.toLocaleString();
   
   const scrubber = document.getElementById('sim-scrubber');
-  if (scrubber) scrubber.max = _stitches.length - 1;
+  if (scrubber) scrubber.max = Math.max(0, _totalPoints - 1);
   
   // Update info panel
   const infoContent = document.getElementById('sim-info-content');
   if (!infoContent || !_file) return;
   
+  const w = _file.width_mm, h = _file.height_mm;
+  const hasDims = (typeof w === 'number' && typeof h === 'number');
   const metaHTML = `
     <dl class="sim-info-meta">
       <dt>File</dt>
@@ -676,10 +685,10 @@ function updateFileInfo() {
       <dt>Format</dt>
       <dd>${(_file.ext || '').toUpperCase()}</dd>
       <dt>Stitches</dt>
-      <dd>${_stitches.length.toLocaleString()}</dd>
+      <dd>${stitchCount.toLocaleString()}</dd>
       <dt>Colors</dt>
-      <dd>${_colors.length}</dd>
-      ${_file.width && _file.height ? `<dt>Dimensions</dt><dd>${_file.width} × ${_file.height} mm</dd>` : ''}
+      <dd>${(typeof _file.color_count === 'number' ? _file.color_count : _colors.length)}</dd>
+      ${hasDims ? `<dt>Dimensions</dt><dd>${w.toFixed(1)} × ${h.toFixed(1)} mm</dd>` : ''}
     </dl>
   `;
   
@@ -729,7 +738,7 @@ function updateColorInfo() {
  *  Animation
  * ------------------------------------------------------------------ */
 function startAnimation() {
-  if (_isPlaying || !_stitches.length) return;
+  if (_isPlaying || _totalPoints === 0) return;
   
   _isPlaying = true;
   _lastFrameTime = performance.now();
@@ -761,16 +770,23 @@ function stopAnimation() {
 function animate(timestamp) {
   if (!_isPlaying) return;
   
+  if (typeof timestamp !== 'number') {
+    // First frame (called without a rAF timestamp) — schedule the real one.
+    _lastFrameTime = performance.now();
+    _animationFrameId = requestAnimationFrame(animate);
+    return;
+  }
+  
   const elapsed = timestamp - _lastFrameTime;
   const stitchesPerFrame = (_stitchesPerSecond * _speed * elapsed) / 1000;
   
-  _currentIndex = Math.min(_currentIndex + Math.ceil(stitchesPerFrame), _stitches.length - 1);
+  _currentIndex = Math.min(_currentIndex + Math.ceil(stitchesPerFrame), _totalPoints - 1);
   _lastFrameTime = timestamp;
   
   redrawCanvas();
   updateProgress();
   
-  if (_currentIndex >= _stitches.length - 1) {
+  if (_currentIndex >= _totalPoints - 1) {
     stopAnimation();
   } else {
     _animationFrameId = requestAnimationFrame(animate);
@@ -797,7 +813,7 @@ function resetAnimation() {
 }
 
 function seekToStitch(index) {
-  _currentIndex = Math.max(0, Math.min(index, _stitches.length - 1));
+  _currentIndex = Math.max(0, Math.min(index, _totalPoints - 1));
   redrawCanvas();
   updateProgress();
 }
@@ -893,3 +909,4 @@ function wireEvents() {
  *  Register with shell router
  * ------------------------------------------------------------------ */
 window.registerView('simulator', { mount, unmount });
+})();

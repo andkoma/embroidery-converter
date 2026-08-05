@@ -128,8 +128,8 @@ Use this checklist **before** building installers to ensure everything is config
   ```
 
 - [ ] Verify installer created:
-  - **Windows:** `release/Embroidery Converter Setup 1.0.0.exe`
-  - **macOS:** `release/Embroidery Converter-1.0.0.dmg`
+  - **Windows:** `release/Embroidery Converter Setup 1.1.0.exe`
+  - **macOS:** `release/Embroidery Converter-1.1.0.dmg`
 
 - [ ] Check installer size:
   - **Windows:** ~150 MB
@@ -273,7 +273,7 @@ Use this checklist **before** building installers to ensure everything is config
 Copy this template for your release notes:
 
 ```markdown
-# Embroidery Converter v1.0.0
+# Embroidery Converter v1.1.0
 
 ## ✨ Features
 
@@ -286,8 +286,8 @@ Copy this template for your release notes:
 
 ## 💾 Downloads
 
-- **Windows 11/10:** [Embroidery Converter Setup 1.0.0.exe](#) (150 MB)
-- **macOS 10.13+:** [Embroidery Converter-1.0.0.dmg](#) (180 MB)
+- **Windows 11/10:** [Embroidery Converter Setup 1.1.0.exe](#) (150 MB)
+- **macOS 10.13+:** [Embroidery Converter-1.1.0.dmg](#) (180 MB)
 
 ## 📋 System Requirements
 

@@ -56,7 +56,7 @@ npm run build:win   # or build:mac
 ```
 
 **Time:** 2-4 minutes  
-**Output:** `release/Embroidery Converter Setup 1.0.0.exe` (~100 MB)
+**Output:** `release/Embroidery Converter Setup 1.1.0.exe` (~100 MB)
 
 **Documentation:** See [BUILD_OPTION1.md](./BUILD_OPTION1.md)
 
@@ -79,7 +79,7 @@ npm run build:win   # or build:mac
 ```
 
 **Time:** 3-5 minutes  
-**Output:** `release/Embroidery Converter Setup 1.0.0.exe` (~150 MB)
+**Output:** `release/Embroidery Converter Setup 1.1.0.exe` (~150 MB)
 
 **Documentation:** See [BUILD.md](./BUILD.md)
 
@@ -255,14 +255,14 @@ You can build **both versions** and let users choose:
 # Build Option 1 first
 rm -rf pybuild/dist/convert*
 npm run build:win
-mv release/Embroidery\ Converter\ Setup\ 1.0.0.exe \
-   release/Embroidery\ Converter\ 1.0.0\ Lightweight.exe
+mv release/Embroidery\ Converter\ Setup\ 1.1.0.exe \
+   release/Embroidery\ Converter\ 1.1.0\ Lightweight.exe
 
 # Build Option 2 second
 npm run python:bundle
 npm run build:win
-mv release/Embroidery\ Converter\ Setup\ 1.0.0.exe \
-   release/Embroidery\ Converter\ 1.0.0\ Professional.exe
+mv release/Embroidery\ Converter\ Setup\ 1.1.0.exe \
+   release/Embroidery\ Converter\ 1.1.0\ Professional.exe
 ```
 
 ### Download Page

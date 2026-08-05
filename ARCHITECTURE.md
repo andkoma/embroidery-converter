@@ -1,6 +1,6 @@
 # 🏗️ Embroidery Converter — Architecture & Design Plan
 
-**Status:** ✅ Phase A, B, C & D COMPLETE · **Version:** 0.5 · **Date:** 2026-08-05
+**Status:** ✅ Phase A, B, C & D COMPLETE · **App Version:** 1.1.0 · **Doc Rev:** 0.5 · **Date:** 2026-08-05
 **Author org:** orgware.ai (andkoma@akopp.de) · *Created with AI support.*
 
 This document is the **design blueprint** for evolving the app from a single-screen
@@ -414,6 +414,37 @@ Planned enhancements for production-quality visualization:
 **Exit criteria:** ✅ user selects files (direct or from Gallery/Batch), chooses destination (removable drive/favorite/custom path), selects machine profile, transfers with auto-conversion if needed, verifies copies, sees progress updates.
 
 **Commits:** [D1-D7: complete transfer implementation]
+
+---
+
+## 9a. Release 1.1.0 — Docs, Screenshots & View Fixes  ✅ **COMPLETE**
+
+Version bumped **1.0.x → 1.1.0** across `package.json`, `package-lock.json` and
+all referencing docs (BUILD*, RELEASE_READY, PREFLIGHT_CHECKLIST, DOWNLOADS,
+MACOS_INSTALLATION, CI_CD, README).
+
+- **1.1-1.** ✅ Added a Playwright screenshot harness (`scripts/make_screenshots.py`)
+  that loads the real renderer and feeds it real backend data (formats +
+  `inspect`), driving each view to a populated state and capturing
+  `docs/screenshots/01-convert … 05-transfer.png`.
+- **1.1-2.** ✅ New **APPLICATION.md** — a visual, per-view feature walkthrough
+  embedding the screenshots; README gains an Application Overview section.
+- **1.1-3.** ✅ Fixed five latent runtime bugs that had left the Gallery, Simulator
+  and Transfer views non-functional in a real render (only syntax-checked before):
+  1. Wrong view-host id (`view-host` → `viewHost`) in gallery/simulator/transfer `mount`.
+  2. Illegal `export` in classic (non-module) view scripts removed.
+  3. **Simulator** rebuilt to consume the backend's `preview.lines` polylines
+     (backend `inspect` returns no raw stitch array) with a global point index.
+  4. **Gallery** preview rewired to the backend `{left,top,width,height,lines}`
+     shape and now actually fetches thumbnails via `makeThumbs` after scan.
+  5. **Global-scope collision** — batch/gallery/simulator/transfer are classic
+     scripts sharing one lexical scope; each is now wrapped in an IIFE so loading
+     a second view no longer throws `Identifier already declared`.
+  Also exposed `window.router` + `router.load()` in `shell.js` for Gallery/Batch
+  hand-off buttons. Added colorful multi-color demo samples (`samples/gen_demo.py`).
+
+**Exit criteria:** ✅ all five views render and populate correctly in a real
+(headless) render; screenshots captured; docs updated to 1.1.0.
 
 ---
 
