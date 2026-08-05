@@ -45,6 +45,20 @@ exports.default = async function(context) {
       shell: '/bin/bash'
     });
     
+    // Ensure main executable has execute permissions
+    const mainExec = path.join(appPath, 'Contents', 'MacOS', context.packager.appInfo.productName);
+    if (fs.existsSync(mainExec)) {
+      console.log('   → Fixing main executable permissions...');
+      try {
+        execSync(`chmod +x "${mainExec}"`, { 
+          stdio: 'pipe',
+          shell: '/bin/bash'
+        });
+        console.log('      ✓ Main executable is executable');
+      } catch (e) {
+        console.log('      ⚠️  Could not set execute permissions on main executable');
+      }
+    }
     // Remove signatures from embedded Python executable (critical!)
     console.log('   → Step 2: Removing embedded Python executable signatures...');
     const pythonBin = path.join(appPath, 'Contents', 'Resources', 'pybin', 'convert');
@@ -53,22 +67,37 @@ exports.default = async function(context) {
     if (fs.existsSync(pythonBin)) {
       console.log(`      Found macOS Python: ${pythonBin}`);
       try {
+        // Ensure execute permissions
+        execSync(`chmod +x "${pythonBin}" 2>/dev/null || true`, { 
+          stdio: 'pipe',
+          shell: '/bin/bash'
+        });
+        console.log('      ✓ Set execute permissions');
+        
         execSync(`codesign --remove-signature "${pythonBin}" 2>/dev/null || true`, { 
           stdio: 'pipe',
           shell: '/bin/bash'
         });
         console.log('      ✓ Removed Python executable signature');
       } catch (e) {
-        console.log('      ⚠️  Could not remove Python signature (may not exist)');
+        console.log('      ⚠️  Could not process Python executable');
       }
     }
     
     if (fs.existsSync(pythonBinWin)) {
       console.log(`      Found Windows Python: ${pythonBinWin}`);
-      execSync(`codesign --remove-signature "${pythonBinWin}" 2>/dev/null || true`, { 
-        stdio: 'pipe',
-        shell: '/bin/bash'
-      });
+      try {
+        execSync(`chmod +x "${pythonBinWin}" 2>/dev/null || true`, { 
+          stdio: 'pipe',
+          shell: '/bin/bash'
+        });
+        execSync(`codesign --remove-signature "${pythonBinWin}" 2>/dev/null || true`, { 
+          stdio: 'pipe',
+          shell: '/bin/bash'
+        });
+      } catch (e) {
+        // Not critical on macOS build
+      }
     }
     
     // Remove quarantine and other extended attributes that could block execution
