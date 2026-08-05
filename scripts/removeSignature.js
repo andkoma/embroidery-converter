@@ -68,14 +68,25 @@ exports.default = async function(context) {
       }
     }
     
-    // Step 3: Apply SINGLE ad-hoc signature to entire app bundle
+    // Step 3: Apply SINGLE ad-hoc signature to entire app bundle WITH ENTITLEMENTS
     // This recursively signs all binaries with the app's entitlements
-    console.log('   → Step 3: Applying ad-hoc signature to entire bundle...');
-    execSync(`codesign --force --deep --sign - "${appPath}"`, { 
+    console.log('   → Step 3: Applying ad-hoc signature to entire bundle with entitlements...');
+    const entitlementsPath = path.join(__dirname, '..', 'build', 'entitlements.mac.plist');
+    const entitlementsArg = fs.existsSync(entitlementsPath) 
+      ? `--entitlements "${entitlementsPath}"` 
+      : '';
+    
+    if (entitlementsArg) {
+      console.log(`      Using entitlements: ${entitlementsPath}`);
+    } else {
+      console.log(`      ⚠️  No entitlements file found - signing without entitlements`);
+    }
+    
+    execSync(`codesign --force --deep --sign - ${entitlementsArg} "${appPath}"`, { 
       stdio: 'pipe',
       shell: '/bin/bash'
     });
-    console.log('      ✓ App bundle ad-hoc signed recursively');
+    console.log('      ✓ App bundle ad-hoc signed recursively with entitlements');
     
     // Step 4: Verify signature
     console.log('   → Step 4: Verifying signature...');
