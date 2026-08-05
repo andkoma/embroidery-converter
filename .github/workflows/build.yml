@@ -136,7 +136,17 @@ jobs:
       - name: Build Windows
         env:
           DEBUG: "electron-builder*"
-        run: npx electron-builder --win --x64 2>&1 | Tee-Object -FilePath build-output.log
+        run: |
+          Write-Host "Starting electron-builder for Windows..."
+          npx electron-builder --win --x64 2>&1 | Tee-Object -FilePath build-output.log
+          $exitCode = $LASTEXITCODE
+          Write-Host ""
+          Write-Host "electron-builder exit code: $exitCode"
+          if ($exitCode -ne 0) {
+            Write-Host "❌ electron-builder failed with exit code $exitCode"
+          } else {
+            Write-Host "✅ electron-builder completed successfully"
+          }
       
       - name: Save build log
         if: always()
@@ -147,13 +157,27 @@ jobs:
           retention-days: 7
           if-no-files-found: warn
       
+      - name: Debug - Check Python bundle
+        run: |
+          Write-Host "=== Checking Python bundle ==="
+          if (Test-Path "pybuild\dist\convert.exe") {
+            Write-Host "✅ convert.exe found"
+            Get-Item "pybuild\dist\convert.exe" | ForEach-Object { Write-Host "  $($_.FullName) ($($_.Length) bytes)" }
+          } else {
+            Write-Host "❌ convert.exe NOT found!"
+            if (Test-Path "pybuild\dist") {
+              Write-Host "Contents of pybuild\dist:"
+              Get-ChildItem -Path "pybuild\dist" -Recurse
+            }
+          }
+      
       - name: Debug - Check release folder structure
         run: |
           Write-Host "=== Checking release folder ==="
           if (Test-Path "release") {
             Write-Host "Release folder exists"
             Get-ChildItem -Path release -Recurse -Force | ForEach-Object {
-              Write-Host $_.FullName
+              Write-Host "$($_.FullName) ($(if($_.PSIsContainer) { 'DIR' } else { $_.Length + ' bytes' }))"
             }
           } else {
             Write-Host "❌ Release folder DOES NOT exist!"
@@ -161,10 +185,10 @@ jobs:
           
           Write-Host ""
           Write-Host "=== Checking for any .exe files ==="
-          $exeFiles = Get-ChildItem -Path . -Name -Recurse -Include *.exe -ErrorAction SilentlyContinue
+          $exeFiles = Get-ChildItem -Path . -File -Recurse -Include *.exe -ErrorAction SilentlyContinue
           if ($exeFiles) {
-            Write-Host "Found .exe files:"
-            $exeFiles | ForEach-Object { Write-Host "  $_" }
+            Write-Host "Found $($exeFiles.Count) .exe files:"
+            $exeFiles | ForEach-Object { Write-Host "  $($_.FullName) ($($_.Length) bytes)" }
           } else {
             Write-Host "No .exe files found anywhere"
           }
