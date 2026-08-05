@@ -39,14 +39,8 @@
     ],
     "extraResources": [
       {
-        "from": "scripts",
-        "to": "scripts",
-        "filter": ["**/*"]
-      },
-      {
-        "from": "pybuild/dist",
-        "to": "pybin",
-        "filter": ["**/*"]
+        "from": "pybuild/dist/convert",
+        "to": "pybin/convert"
       }
     ],
     "win": {
