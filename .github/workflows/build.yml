@@ -24,7 +24,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
       
       - name: Setup Python
         uses: actions/setup-python@v4
@@ -41,7 +40,10 @@ jobs:
         run: npm run python:bundle
         
       - name: List build artifacts
-        run: ls -la pybuild/dist/ 2>/dev/null || echo "No pybuild/dist yet"
+        run: ls -lah pybuild/dist/ 2>/dev/null || echo "No pybuild/dist yet"
+      
+      - name: Verify Python bundle exists
+        run: test -f pybuild/dist/convert && echo "✅ Python bundle exists" || echo "❌ Python bundle missing"
       
       - name: Build macOS (${{ matrix.arch }})
         run: npx electron-builder --mac --${{ matrix.arch }}
@@ -80,7 +82,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
       
       - name: Setup Python
         uses: actions/setup-python@v4
@@ -101,6 +102,9 @@ jobs:
         
       - name: List build artifacts
         run: dir pybuild\dist\ 2>nul || echo "No pybuild\dist yet"
+      
+      - name: Verify Python bundle exists
+        run: if exist "pybuild\dist\convert.exe" (echo ✅ Python bundle exists) else (echo ❌ Python bundle missing)
       
       - name: Build Windows
         run: npx electron-builder --win --x64
