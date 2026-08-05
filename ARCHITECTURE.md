@@ -1,6 +1,6 @@
 # 🏗️ Embroidery Converter — Architecture & Design Plan
 
-**Status:** ✅ Phase A, B & C COMPLETE · **Version:** 0.4 · **Date:** 2026-08-05
+**Status:** ✅ Phase A, B, C & D COMPLETE · **Version:** 0.5 · **Date:** 2026-08-05
 **Author org:** orgware.ai (andkoma@akopp.de) · *Created with AI support.*
 
 This document is the **design blueprint** for evolving the app from a single-screen
@@ -386,12 +386,34 @@ canvas-rendered stitches with actual thread colors, plays/pauses animation with 
 playback at adjustable speed, scrubs timeline to any stitch position, jumps between color
 blocks using prev/next buttons or palette clicks.
 
-**Commits:** [C1-C7: complete simulator implementation]
+**Commits:** d7f4eae (C1-C7: complete simulator implementation)
 
-### Phase D — Machine Transfer
-- `listVolumes` + `probe-destination`; destination picker with removable/network mounts +
-  favorites; machine profile validation; convert→copy→verify. Transport-provider seam for
-  future USB-link/WLAN/SewNet. Exit: reliably write correct formats to a mounted machine.
+---
+
+#### Phase C+ — Enhanced Simulator Features (Future)
+Planned enhancements for production-quality visualization:
+- **C+1. Background Material Library:** Selectable fabric types (Aida, evenweave, linen, felt) with color picker, texture simulation, customizable library with import/export
+- **C+2. Yarn/Thread Library:** Vendor databases (DMC, Anchor, Madeira), material types (cotton, polyester, metallic), thread weight options, color mapping UI, customizable library
+- **C+3. 2D Zoom & Pan:** Mouse wheel zoom at cursor, click-drag panning, zoom controls (+/- buttons, reset to fit), touch gestures (pinch-to-zoom)
+- **C+4. 3D View Mode:** WebGL/Three.js integration, raised stitch height simulation, lighting/shadows for depth, camera orbit controls
+- **C+5. View Mode Toggle:** 2D ↔ 3D switcher with state persistence, camera position memory
+
+**Priority:** Medium (enhances visualization quality but not critical for core workflow)
+
+---
+
+### Phase D — Machine Transfer  ✅ **COMPLETE**
+- D1. ✅ Transfer view skeleton with three-panel layout (Source | Destination | Settings)
+- D2. ✅ Backend IPC handlers: `fs:listVolumes` (detect removable drives per platform - Windows/macOS/Linux), `fs:joinPath`, `fs:ensureDir`, `fs:copyFile`, `fs:verifyFile`
+- D3. ✅ Destination picker: Removable drives auto-detection, favorites with persistence, custom path browser
+- D4. ✅ Machine profile database (Brother/Janome/Pfaff/Husqvarna/Singer/Toyota/Melco/Tajima/Generic) with format validation and color limits
+- D5. ✅ Transfer workflow: Source file management, auto-convert to machine format, sequential copy with progress, verification by file size comparison, dated subfolder option
+- D6. ✅ Gallery/Batch hand-off integration via `gallery:send-to-transfer` and `batch:send-to-transfer` events
+- D7. ✅ i18n (EN/DE/FR transfer.* keys) + syntax validation
+
+**Exit criteria:** ✅ user selects files (direct or from Gallery/Batch), chooses destination (removable drive/favorite/custom path), selects machine profile, transfers with auto-conversion if needed, verifies copies, sees progress updates.
+
+**Commits:** [D1-D7: complete transfer implementation]
 
 ---
 

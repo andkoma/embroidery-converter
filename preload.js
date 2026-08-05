@@ -133,6 +133,15 @@ contextBridge.exposeInMainWorld('api', {
   showItem: (p) => ipcRenderer.invoke('shell:showItem', p),
 
   /* ---------------------------------------------------------------- *
+   *  Transfer utilities
+   * ---------------------------------------------------------------- */
+  listVolumes: ()                => ipcRenderer.invoke('fs:listVolumes'),
+  joinPath:    (...segments)     => ipcRenderer.invoke('fs:joinPath', ...segments),
+  ensureDir:   (dirPath)         => ipcRenderer.invoke('fs:ensureDir', dirPath),
+  copyFile:    (srcPath, destPath) => ipcRenderer.invoke('fs:copyFile', srcPath, destPath),
+  verifyFile:  (srcPath, destPath) => ipcRenderer.invoke('fs:verifyFile', srcPath, destPath),
+
+  /* ---------------------------------------------------------------- *
    *  Platform info
    * ---------------------------------------------------------------- */
   platform: process.platform,

@@ -486,6 +486,163 @@ ipcMain.handle('shell:showItem', async (_e, p) => {
 });
 
 /* ------------------------------------------------------------------ *
+ *  File System Utilities for Transfer
+ * ------------------------------------------------------------------ */
+
+/**
+ * List removable volumes (USB drives, SD cards, etc.)
+ * Returns array of {mountPoint, label, capacity, available, removable}
+ */
+ipcMain.handle('fs:listVolumes', async () => {
+  const os = require('os');
+  const volumes = [];
+  
+  try {
+    if (process.platform === 'win32') {
+      // Windows: check drive letters using wmic or fsutil
+      const { execSync } = require('child_process');
+      try {
+        const output = execSync('wmic logicaldisk get caption,drivetype,volumename,size,freespace', {
+          encoding: 'utf8',
+          windowsHide: true
+        });
+        const lines = output.split('\n').slice(1); // Skip header
+        
+        for (const line of lines) {
+          const parts = line.trim().split(/\s{2,}/);
+          if (parts.length >= 2) {
+            const [caption, driveType, volumeName, size, freeSpace] = parts;
+            // DriveType 2 = Removable, 3 = Fixed, 4 = Network, 5 = CD-ROM
+            if (caption && driveType === '2') {
+              volumes.push({
+                mountPoint: caption,
+                label: volumeName || caption,
+                capacity: parseInt(size, 10) || 0,
+                available: parseInt(freeSpace, 10) || 0,
+                removable: true
+              });
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Error listing Windows volumes:', err);
+      }
+    } else if (process.platform === 'darwin') {
+      // macOS: check /Volumes
+      const volumesDir = '/Volumes';
+      if (fs.existsSync(volumesDir)) {
+        const entries = fs.readdirSync(volumesDir);
+        for (const entry of entries) {
+          const mountPoint = path.join(volumesDir, entry);
+          try {
+            const stats = fs.statSync(mountPoint);
+            if (stats.isDirectory() && entry !== 'Macintosh HD') {
+              volumes.push({
+                mountPoint,
+                label: entry,
+                capacity: 0, // Would need platform-specific calls for capacity
+                available: 0,
+                removable: true
+              });
+            }
+          } catch (err) {
+            // Skip inaccessible volumes
+          }
+        }
+      }
+    } else {
+      // Linux: check /media and /mnt
+      const mediaDirs = ['/media', '/mnt'];
+      for (const mediaDir of mediaDirs) {
+        if (fs.existsSync(mediaDir)) {
+          const entries = fs.readdirSync(mediaDir);
+          for (const entry of entries) {
+            const mountPoint = path.join(mediaDir, entry);
+            try {
+              const stats = fs.statSync(mountPoint);
+              if (stats.isDirectory()) {
+                volumes.push({
+                  mountPoint,
+                  label: entry,
+                  capacity: 0,
+                  available: 0,
+                  removable: true
+                });
+              }
+            } catch (err) {
+              // Skip inaccessible volumes
+            }
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Error listing volumes:', err);
+  }
+  
+  return volumes;
+});
+
+/**
+ * Join path segments (platform-aware)
+ */
+ipcMain.handle('fs:joinPath', async (_e, ...segments) => {
+  return path.join(...segments);
+});
+
+/**
+ * Ensure directory exists (create if missing)
+ */
+ipcMain.handle('fs:ensureDir', async (_e, dirPath) => {
+  try {
+    if (!fs.existsSync(dirPath)) {
+      fs.mkdirSync(dirPath, { recursive: true });
+    }
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+/**
+ * Copy file from source to destination
+ */
+ipcMain.handle('fs:copyFile', async (_e, srcPath, destPath) => {
+  try {
+    // Ensure destination directory exists
+    const destDir = path.dirname(destPath);
+    if (!fs.existsSync(destDir)) {
+      fs.mkdirSync(destDir, { recursive: true });
+    }
+    
+    fs.copyFileSync(srcPath, destPath);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+/**
+ * Verify file copy by comparing sizes
+ * (Simple verification - could be extended with checksums)
+ */
+ipcMain.handle('fs:verifyFile', async (_e, srcPath, destPath) => {
+  try {
+    if (!fs.existsSync(srcPath) || !fs.existsSync(destPath)) {
+      return false;
+    }
+    
+    const srcStats = fs.statSync(srcPath);
+    const destStats = fs.statSync(destPath);
+    
+    return srcStats.size === destStats.size;
+  } catch (err) {
+    console.error('Error verifying file:', err);
+    return false;
+  }
+});
+
+/* ------------------------------------------------------------------ *
  *  Settings IPC
  * ------------------------------------------------------------------ */
 
