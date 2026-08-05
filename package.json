@@ -59,7 +59,8 @@
       "icon": "assets/icon.icns",
       "category": "public.app-category.graphics-design",
       "hardenedRuntime": false,
-      "gatekeeperAssess": false
+      "gatekeeperAssess": false,
+      "sign": null
     },
     "dmg": {
       "title": "Embroidery Converter"
