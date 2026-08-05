@@ -136,7 +136,7 @@
   /* ---------------------------------------------------------------- *
    *  Navigation helper (handles lazy loading)
    * ---------------------------------------------------------------- */
-  const IMPLEMENTED_VIEWS = ['convert']; // extend as phases are built
+  const IMPLEMENTED_VIEWS = ['convert', 'batch']; // extend as phases are built
 
   async function navigateTo(viewId) {
     if (!IMPLEMENTED_VIEWS.includes(viewId)) {
