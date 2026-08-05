@@ -12,6 +12,11 @@
 const I18N = {
   en: {
     'app.subtitle': 'Convert stitch files between machine formats',
+    'nav.convert':   'Convert',
+    'nav.batch':     'Batch',
+    'nav.gallery':   'Gallery',
+    'nav.simulator': 'Simulator',
+    'nav.transfer':  'Transfer',
     'backend.checking': 'Checking backend…',
     'backend.ready.bundled': 'Bundled engine ready',
     'backend.ready.system': 'Conversion engine ready',
@@ -73,6 +78,11 @@ const I18N = {
 
   de: {
     'app.subtitle': 'Stickdateien zwischen Maschinenformaten konvertieren',
+    'nav.convert':   'Konvertieren',
+    'nav.batch':     'Stapel',
+    'nav.gallery':   'Galerie',
+    'nav.simulator': 'Simulator',
+    'nav.transfer':  'Transfer',
     'backend.checking': 'Prüfe Backend…',
     'backend.ready.bundled': 'Integrierte Engine bereit',
     'backend.ready.system': 'Konvertierungs-Engine bereit',
@@ -134,6 +144,11 @@ const I18N = {
 
   fr: {
     'app.subtitle': 'Convertir des fichiers de broderie entre formats machine',
+    'nav.convert':   'Convertir',
+    'nav.batch':     'Lot',
+    'nav.gallery':   'Galerie',
+    'nav.simulator': 'Simulateur',
+    'nav.transfer':  'Transfert',
     'backend.checking': 'Vérification du moteur…',
     'backend.ready.bundled': 'Moteur intégré prêt',
     'backend.ready.system': 'Moteur de conversion prêt',

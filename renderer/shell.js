@@ -2,89 +2,177 @@
  * Embroidery Converter - Shell Initialization
  * Copyright © 2026 orgware.ai (andkoma@akopp.de)
  * This application was created with AI support.
- * 
- * Initializes the app shell: router, navigation, and loads the initial view.
+ *
+ * Responsibilities:
+ *  - Bootstrap the store, router, and navigation rail
+ *  - Own backend-status probe (updates topbar badge + store)
+ *  - Own language selection (persists to localStorage + store)
+ *  - Load & navigate to the initial view (Convert)
  */
 'use strict';
 
 (async function initShell() {
-  const viewHost = document.getElementById('viewHost');
-  const router = new Router(viewHost, store);
+  /* ---------------------------------------------------------------- *
+   *  DOM refs (topbar elements live here permanently)
+   * ---------------------------------------------------------------- */
+  const viewHost    = document.getElementById('viewHost');
+  const backendBadge = document.getElementById('backendBadge');
+  const backendLabel = document.getElementById('backendLabel');
+  const langSelect   = document.getElementById('langSelect');
 
-  // Register view modules (we'll load them dynamically)
-  // For now, we'll register Convert first and add others as we build them
-  
-  /**
-   * Dynamically load a view module by creating a script tag.
-   * Views export themselves by calling window.registerView(id, module).
-   */
-  function loadViewModule(viewId) {
-    return new Promise((resolve, reject) => {
-      const script = document.createElement('script');
-      script.src = `views/${viewId}/${viewId}.js`;
-      script.onload = () => resolve();
-      script.onerror = () => reject(new Error(`Failed to load view: ${viewId}`));
-      document.body.appendChild(script);
+  /* ---------------------------------------------------------------- *
+   *  i18n helpers (shell-level)
+   * ---------------------------------------------------------------- */
+  function t(key) {
+    const lang = store.get('settings.language', 'en');
+    const dict = (window.I18N && window.I18N[lang]) || (window.I18N && window.I18N.en) || {};
+    return dict[key] !== undefined ? dict[key] : ((window.I18N && window.I18N.en && window.I18N.en[key]) || key);
+  }
+
+  function applyStaticI18n() {
+    document.querySelectorAll('[data-i18n]').forEach(node => {
+      node.textContent = t(node.getAttribute('data-i18n'));
+    });
+    document.querySelectorAll('[data-i18n-ph]').forEach(node => {
+      node.setAttribute('placeholder', t(node.getAttribute('data-i18n-ph')));
+    });
+    document.documentElement.lang = store.get('settings.language', 'en');
+  }
+
+  /* ---------------------------------------------------------------- *
+   *  Language initialisation
+   * ---------------------------------------------------------------- */
+  function detectLanguage() {
+    const saved = (() => { try { return localStorage.getItem('ec_lang'); } catch (_) { return null; } })();
+    if (saved && window.I18N && window.I18N[saved]) return saved;
+    const nav = (navigator.language || 'en').slice(0, 2).toLowerCase();
+    return (window.I18N && window.I18N[nav]) ? nav : 'en';
+  }
+
+  const initialLang = detectLanguage();
+  store.set('settings.language', initialLang);
+  if (langSelect) langSelect.value = initialLang;
+  applyStaticI18n();
+
+  if (langSelect) {
+    langSelect.addEventListener('change', () => {
+      const lang = langSelect.value;
+      store.set('settings.language', lang);
+      try { localStorage.setItem('ec_lang', lang); } catch (_) {}
+      applyStaticI18n(); // re-apply nav labels; the view re-renders via store subscription
     });
   }
 
-  /**
-   * Global function for views to register themselves.
-   */
+  /* ---------------------------------------------------------------- *
+   *  Backend status probe
+   * ---------------------------------------------------------------- */
+  async function checkBackend() {
+    let s;
+    try { s = await window.api.backendStatus(); }
+    catch (e) { s = { available: false, reason: 'exception', error: (e && e.message) || String(e) }; }
+
+    store.patch({ backend: { ...s, checking: false } });
+
+    backendBadge.classList.remove('ok', 'bad');
+    if (s.available) {
+      backendBadge.classList.add('ok');
+      backendLabel.textContent = s.mode === 'bundled'
+        ? t('backend.ready.bundled') : t('backend.ready.system');
+      backendBadge.removeAttribute('title');
+    } else {
+      backendBadge.classList.add('bad');
+      backendLabel.textContent = (s.reason === 'exception' || s.reason === 'engine-error')
+        ? t('backend.error') : t('backend.unavailable');
+      backendBadge.title = s.error || t('backend.unavailable');
+    }
+  }
+
+  await checkBackend();
+
+  /* ---------------------------------------------------------------- *
+   *  Router setup
+   * ---------------------------------------------------------------- */
+  const router = new Router(viewHost, store);
+
+  /** Load a view script by injecting a <script> tag. */
+  function loadViewScript(viewId) {
+    return new Promise((resolve, reject) => {
+      // Skip if already loaded
+      if (document.querySelector(`script[data-view="${viewId}"]`)) { resolve(); return; }
+      const s  = document.createElement('script');
+      s.src    = `views/${viewId}/${viewId}.js`;
+      s.setAttribute('data-view', viewId);
+      s.onload  = () => resolve();
+      s.onerror = () => reject(new Error(`Failed to load view script: ${viewId}`));
+      document.body.appendChild(s);
+    });
+  }
+
+  /** Views expose themselves via window.registerView(id, module). */
   window.registerView = function(id, module) {
     router.register(id, module);
   };
 
-  // Load Convert view module
-  try {
-    await loadViewModule('convert');
-  } catch (err) {
-    console.error('Failed to load Convert view:', err);
-    viewHost.innerHTML = `
-      <div style="padding: 40px; text-align: center; color: #e74c3c;">
-        <h2>Failed to load application</h2>
-        <p>${err.message}</p>
-      </div>
-    `;
-    return;
+  /* ---------------------------------------------------------------- *
+   *  Navigation helper (handles lazy loading)
+   * ---------------------------------------------------------------- */
+  const IMPLEMENTED_VIEWS = ['convert']; // extend as phases are built
+
+  async function navigateTo(viewId) {
+    if (!IMPLEMENTED_VIEWS.includes(viewId)) {
+      // Show a "coming soon" placeholder for unbuilt views
+      store.patch({ currentView: viewId });
+      updateNavActive(viewId);
+      viewHost.innerHTML = `
+        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;
+                    height:100%;color:var(--text-dim);gap:12px;padding:40px">
+          <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor"
+               stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"
+               style="opacity:.35">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M12 8v4l3 3"/>
+          </svg>
+          <p style="font-size:18px;font-weight:600;margin:0">${viewId.charAt(0).toUpperCase() + viewId.slice(1)}</p>
+          <p style="font-size:13px;margin:0;opacity:.7">Coming soon — Phase ${phaseLabel(viewId)}</p>
+        </div>`;
+      return;
+    }
+
+    // Lazy-load the view script if not yet registered
+    if (!router.views.has(viewId)) {
+      viewHost.innerHTML = '<div class="view-loading"></div>';
+      try { await loadViewScript(viewId); }
+      catch (err) {
+        viewHost.innerHTML = `<div style="padding:40px;text-align:center;color:#e74c3c">
+          <h3>Failed to load view</h3><p>${err.message}</p></div>`;
+        return;
+      }
+    }
+
+    updateNavActive(viewId);
+    await router.navigate(viewId);
   }
 
-  // Set up navigation
-  const navItems = document.querySelectorAll('.nav-item');
-  navItems.forEach(item => {
-    item.addEventListener('click', async (e) => {
-      const viewId = item.dataset.view;
-      
-      // If view not yet loaded, try loading it
-      if (!router.views.has(viewId)) {
-        // For now, only Convert is implemented
-        if (viewId !== 'convert') {
-          alert(`${viewId} view is not yet implemented (coming in Phase A${viewId === 'batch' ? '' : 'B/C/D'})`);
-          return;
-        }
-        
-        try {
-          await loadViewModule(viewId);
-        } catch (err) {
-          alert(`Failed to load ${viewId} view: ${err.message}`);
-          return;
-        }
-      }
-      
-      // Navigate to view
-      await router.navigate(viewId);
-      
-      // Update active state
-      navItems.forEach(n => n.classList.remove('active'));
-      item.classList.add('active');
+  function phaseLabel(viewId) {
+    return { batch:'A (Batch)', gallery:'B (Gallery)', simulator:'C (Simulator)', transfer:'D (Transfer)' }[viewId] || '?';
+  }
+
+  function updateNavActive(viewId) {
+    document.querySelectorAll('.nav-item').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.view === viewId);
     });
+  }
+
+  /* ---------------------------------------------------------------- *
+   *  Wire navigation buttons
+   * ---------------------------------------------------------------- */
+  document.querySelectorAll('.nav-item').forEach(btn => {
+    btn.addEventListener('click', () => navigateTo(btn.dataset.view));
   });
 
-  // Navigate to initial view (Convert)
-  await router.navigate('convert');
+  /* ---------------------------------------------------------------- *
+   *  Boot into Convert view
+   * ---------------------------------------------------------------- */
+  await navigateTo('convert');
 
-  // Initialize i18n (apply translations to static nav elements)
-  if (typeof applyTranslations === 'function') {
-    applyTranslations();
-  }
 })();

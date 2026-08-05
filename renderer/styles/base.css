@@ -30,13 +30,6 @@ html, body {
   user-select: none;
 }
 
-.app {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  overflow: hidden;
-}
-
 /* ---------- Topbar ---------- */
 .topbar {
   display: flex;
