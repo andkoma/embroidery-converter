@@ -56,7 +56,7 @@ jobs:
       - name: Build macOS (${{ matrix.arch }})
         env:
           DEBUG: "electron-builder*"
-        run: npx electron-builder --mac --${{ matrix.arch }} --verbose 2>&1 | tee build-output.log
+        run: npx electron-builder --mac --${{ matrix.arch }} 2>&1 | tee build-output.log
       
       - name: Save build log
         if: always()
@@ -136,7 +136,7 @@ jobs:
       - name: Build Windows
         env:
           DEBUG: "electron-builder*"
-        run: npx electron-builder --win --x64 --verbose 2>&1 | Tee-Object -FilePath build-output.log
+        run: npx electron-builder --win --x64 2>&1 | Tee-Object -FilePath build-output.log
       
       - name: Save build log
         if: always()
