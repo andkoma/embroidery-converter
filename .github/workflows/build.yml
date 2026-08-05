@@ -178,6 +178,8 @@ jobs:
             Write-Host "❌ ERROR: release folder does not exist!"
             exit 1
           }
+      
+      - name: Save build log
         if: always()
         uses: actions/upload-artifact@v4
         with:
