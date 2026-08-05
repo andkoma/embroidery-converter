@@ -39,10 +39,15 @@
     ],
     "extraResources": [
       {
-        "from": "pybuild/dist/convert",
-        "to": "pybin/convert"
+        "from": "pybuild/dist",
+        "filter": [
+          "convert",
+          "convert.exe"
+        ],
+        "to": "pybin"
       }
     ],
+    "publish": null,
     "win": {
       "target": ["nsis"],
       "icon": "assets/icon.ico"
