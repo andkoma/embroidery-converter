@@ -171,7 +171,20 @@ jobs:
         if: always()
         run: |
           Write-Host "=== Checking release folder ==="
+<<<<<<< HEAD
+          if (Test-Path "release") {
+            Write-Host "Release folder exists"
+            Get-ChildItem -Path release -Recurse -Force | ForEach-Object {
+              $sizeLabel = if ($_.PSIsContainer) { 'DIR' } else { "$($_.Length) bytes" }
+              Write-Host "$($_.FullName) ($sizeLabel)"
+            }
+          } else {
+            Write-Host "❌ Release folder DOES NOT exist!"
+          }
+          
+=======
           dir release 2>$null || Write-Host "No release folder found"
+>>>>>>> origin/master
           Write-Host ""
           Write-Host "=== All .exe files ==="
           Get-ChildItem -Recurse -Include "*.exe" 2>$null | ForEach-Object { Write-Host $_.FullName }
