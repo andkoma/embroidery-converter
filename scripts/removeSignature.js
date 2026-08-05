@@ -38,9 +38,15 @@ exports.default = async function(context) {
   console.log(`   Path: ${appPath}`);
   
   try {
-    // Remove ALL signatures from main app bundle
-    console.log('   → Step 1: Removing main app signature...');
-    execSync(`codesign --remove-signature "${appPath}" 2>/dev/null || true`, { 
+    // macOS 13+ requires all code to be signed to run.
+    // Instead of removing signature entirely (which corrupts the bundle),
+    // use an ad-hoc signature that allows execution without developer ID.
+    // This allows Gatekeeper to show the standard "developer cannot be verified"
+    // warning instead of rejecting as "damaged".
+    
+    console.log('   → Step 1: Applying ad-hoc signature...');
+    // Using - (dash) for ad-hoc signature (no certificate required)
+    execSync(`codesign --force --sign - --preserve-metadata=entitlements,requirements,flags,runtime "${appPath}"`, { 
       stdio: 'pipe',
       shell: '/bin/bash'
     });
@@ -48,7 +54,7 @@ exports.default = async function(context) {
     // Ensure main executable has execute permissions
     const mainExec = path.join(appPath, 'Contents', 'MacOS', context.packager.appInfo.productName);
     if (fs.existsSync(mainExec)) {
-      console.log('   → Fixing main executable permissions...');
+      console.log('   → Step 2: Fixing main executable permissions...');
       try {
         execSync(`chmod +x "${mainExec}"`, { 
           stdio: 'pipe',
@@ -60,7 +66,7 @@ exports.default = async function(context) {
       }
     }
     // Remove signatures from embedded Python executable (critical!)
-    console.log('   → Step 2: Removing embedded Python executable signatures...');
+    console.log('   → Step 3: Signing embedded Python executable...');
     const pythonBin = path.join(appPath, 'Contents', 'Resources', 'pybin', 'convert');
     const pythonBinWin = path.join(appPath, 'Contents', 'Resources', 'pybin', 'convert.exe');
     
@@ -72,13 +78,12 @@ exports.default = async function(context) {
           stdio: 'pipe',
           shell: '/bin/bash'
         });
-        console.log('      ✓ Set execute permissions');
-        
-        execSync(`codesign --remove-signature "${pythonBin}" 2>/dev/null || true`, { 
+        // Apply ad-hoc signature
+        execSync(`codesign --force --sign - "${pythonBin}" 2>/dev/null || true`, { 
           stdio: 'pipe',
           shell: '/bin/bash'
         });
-        console.log('      ✓ Removed Python executable signature');
+        console.log('      ✓ Python executable signed with ad-hoc signature');
       } catch (e) {
         console.log('      ⚠️  Could not process Python executable');
       }
@@ -91,7 +96,7 @@ exports.default = async function(context) {
           stdio: 'pipe',
           shell: '/bin/bash'
         });
-        execSync(`codesign --remove-signature "${pythonBinWin}" 2>/dev/null || true`, { 
+        execSync(`codesign --force --sign - "${pythonBinWin}" 2>/dev/null || true`, { 
           stdio: 'pipe',
           shell: '/bin/bash'
         });
@@ -100,8 +105,8 @@ exports.default = async function(context) {
       }
     }
     
-    // Remove quarantine and other extended attributes that could block execution
-    console.log('   → Step 3: Removing extended attributes...');
+    // Remove extended attributes that could block execution
+    console.log('   → Step 4: Cleaning extended attributes...');
     try {
       execSync(`xattr -d com.apple.quarantine "${appPath}" 2>/dev/null || true`, { 
         stdio: 'pipe',
@@ -112,27 +117,21 @@ exports.default = async function(context) {
       // Not critical, quarantine might not be set during build
     }
     
-    // Remove code signing extended attributes
+    // Verify signature is applied
+    console.log('   → Step 5: Verifying app signature...');
     try {
-      execSync(`xattr -d com.apple.code-signature-restrictions "${appPath}" 2>/dev/null || true`, { 
-        stdio: 'pipe',
-        shell: '/bin/bash'
-      });
+      const result = execSync(`codesign -v "${appPath}" 2>&1`, { stdio: 'pipe', encoding: 'utf8' });
+      console.log('      ✓ App is signed');
+      if (result.includes('ad hoc')) {
+        console.log('      ✓ Using ad-hoc signature (allows unsigned developer launch)');
+      }
     } catch (e) {
-      // Not present, that's OK
+      console.log('      ⚠️  Could not verify signature');
     }
     
-    // Verify removal
-    console.log('   → Step 4: Verifying unsigned state...');
-    try {
-      execSync(`codesign -v "${appPath}" 2>&1`, { stdio: 'pipe' });
-      console.log('   ⚠️  Warning: App still reports as signed - may need manual intervention');
-    } catch (e) {
-      console.log('   ✅ Confirmed: App is properly unsigned');
-    }
-    
-    console.log('\n✅ SUCCESS: All signatures and extended attributes removed');
-    console.log('   → Gatekeeper will show standard "developer cannot be verified" warning\n');
+    console.log('\n✅ SUCCESS: App configured for standard Gatekeeper handling');
+    console.log('   → Gatekeeper will show "developer cannot be verified" warning');
+    console.log('   → This allows users to click "Open" to run the app\n');
     
   } catch (err) {
     console.log(`\n❌ ERROR: ${err.message}`);
