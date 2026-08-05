@@ -13,6 +13,18 @@
 'use strict';
 
 /* ------------------------------------------------------------------ *
+ *  i18n helper (same pattern as gallery.js)
+ * ------------------------------------------------------------------ */
+const t = (key, params = {}) => {
+  const lang = window.store?.get('settings.language', 'en') || 'en';
+  let str = window.I18N?.[lang]?.[key] || key;
+  Object.entries(params).forEach(([k, v]) => {
+    str = str.replace(new RegExp(`\\{${k}\\}`, 'g'), v);
+  });
+  return str;
+};
+
+/* ------------------------------------------------------------------ *
  *  Constants
  * ------------------------------------------------------------------ */
 const BV_EXTS  = ['dst', 'pes', 'pec', 'jef', 'vp3', 'hus', 'xxx', 'exp', 'sew', 'emb'];
@@ -83,7 +95,7 @@ function buildHTML() {
       </div>
     </div>
     <ul id="bv-folder-list" class="bv-folder-list">
-      <li class="bv-empty-hint">No folders added yet.<br>Click + to add folders.</li>
+      <li class="bv-empty-hint" id="bv-no-folders-msg"></li>
     </ul>
   </aside>
 
@@ -119,8 +131,8 @@ function buildHTML() {
     </div>
 
     <div class="bv-table-footer">
-      <span id="bv-sel-count" class="bv-sel-count">0 selected</span>
-      <button id="bv-convert-btn" class="bv-convert-btn" disabled>Convert Selected</button>
+      <span id="bv-sel-count" class="bv-sel-count"></span>
+      <button id="bv-convert-btn" class="bv-convert-btn" disabled></button>
     </div>
   </main>
 
@@ -480,8 +492,8 @@ function updateCounts() {
   let selCount = 0;
   for (const f of _filtered) { if (_selected.has(f.path)) selCount++; }
 
-  if (countEl)    countEl.textContent = _filtered.length + ' file' + (_filtered.length !== 1 ? 's' : '');
-  if (selEl)      selEl.textContent   = selCount + ' selected';
+  if (countEl)    countEl.textContent = t('batch.files', {n: _filtered.length});
+  if (selEl)      selEl.textContent   = t('batch.selected', {n: selCount});
   if (convertBtn) convertBtn.disabled = selCount === 0;
   if (selAll) {
     const allSel = _filtered.length > 0 && selCount === _filtered.length;
@@ -504,10 +516,10 @@ function renderRows() {
     rowsEl.style.paddingTop    = '';
     rowsEl.style.paddingBottom = '';
     const msg = _folders.length === 0
-      ? 'Add source folders in the left panel to get started.'
+      ? t('batch.noFolders')
       : _scanning
-        ? 'Scanning…'
-        : 'No matching files found.';
+        ? t('batch.scanning')
+        : t('batch.noFiles');
     rowsEl.innerHTML = `<div class="bv-empty-table">${msg}</div>`;
     return;
   }
@@ -558,7 +570,8 @@ function renderFolders() {
   const list = document.getElementById('bv-folder-list');
   if (!list) return;
   if (_folders.length === 0) {
-    list.innerHTML = '<li class="bv-empty-hint">No folders added yet.<br>Click + to add folders.</li>';
+    const msg = document.getElementById('bv-no-folders-msg');
+    if (msg) msg.innerHTML = t('batch.noFolders').replace('\n', '<br>');
     return;
   }
   list.innerHTML = _folders.map(f => `
@@ -858,18 +871,18 @@ function wireEvents() {
       const btn = document.getElementById('bv-convert-btn');
       if (btn) {
         btn.disabled = true;
-        btn.textContent = 'Converting…';
+        btn.textContent = t('batch.converting');
       }
 
       try {
         await runBatchConversion(selectedFiles, profile);
       } catch (err) {
         console.error('Batch conversion error:', err);
-        alert('Batch conversion failed: ' + (err.message || String(err)));
+        alert(t('batch.failed') + ': ' + (err.message || String(err)));
       } finally {
         if (btn) {
           btn.disabled = false;
-          btn.textContent = 'Convert Selected';
+          btn.textContent = t('batch.convertBtn');
         }
         updateCounts();
       }
@@ -908,6 +921,13 @@ function mount(container, store) {
   injectStyles();
   container.innerHTML = buildHTML();
   wireEvents();
+
+  // Set initial i18n text
+  const convertBtn = document.getElementById('bv-convert-btn');
+  if (convertBtn) convertBtn.textContent = t('batch.convertBtn');
+  
+  const noFoldersMsg = document.getElementById('bv-no-folders-msg');
+  if (noFoldersMsg) noFoldersMsg.innerHTML = t('batch.noFolders').replace('\n', '<br>');
 
   // Initial empty render (before settings load)
   renderRows();

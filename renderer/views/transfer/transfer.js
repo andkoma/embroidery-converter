@@ -18,6 +18,18 @@
  *  - Batch transfer with progress tracking
  */
 
+/* ------------------------------------------------------------------ *
+ *  i18n helper
+ * ------------------------------------------------------------------ */
+const t = (key, params = {}) => {
+  const lang = window.store?.get('settings.language', 'en') || 'en';
+  let str = window.I18N?.[lang]?.[key] || key;
+  Object.entries(params).forEach(([k, v]) => {
+    str = str.replace(new RegExp(`\\{${k}\\}`, 'g'), v);
+  });
+  return str;
+};
+
 let _abortCtrl = null;
 
 // Transfer state

@@ -98,6 +98,7 @@ const I18N = {
     'batch.overwrite': 'Overwrite existing',
     'batch.skip': 'Skip file',
     'batch.complete': 'Conversion complete!\n{ok} succeeded, {failed} failed.',
+    'batch.failed': 'Batch conversion failed',
 
     // Gallery view
     'gallery.folders': 'Folders',
@@ -273,6 +274,7 @@ const I18N = {
     'batch.overwrite': 'Vorhandene überschreiben',
     'batch.skip': 'Datei überspringen',
     'batch.complete': 'Konvertierung abgeschlossen!\n{ok} erfolgreich, {failed} fehlgeschlagen.',
+    'batch.failed': 'Stapelkonvertierung fehlgeschlagen',
 
     // Gallery view
     'gallery.folders': 'Ordner',
@@ -448,6 +450,7 @@ const I18N = {
     'batch.overwrite': 'Écraser l\'existant',
     'batch.skip': 'Ignorer le fichier',
     'batch.complete': 'Conversion terminée !\n{ok} réussi(s), {failed} échec(s).',
+    'batch.failed': 'Échec de la conversion par lot',
 
     // Gallery view
     'gallery.folders': 'Dossiers',

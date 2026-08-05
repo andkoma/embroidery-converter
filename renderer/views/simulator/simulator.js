@@ -16,6 +16,18 @@
  *  - Hand-off from Gallery view
  */
 
+/* ------------------------------------------------------------------ *
+ *  i18n helper
+ * ------------------------------------------------------------------ */
+const t = (key, params = {}) => {
+  const lang = window.store?.get('settings.language', 'en') || 'en';
+  let str = window.I18N?.[lang]?.[key] || key;
+  Object.entries(params).forEach(([k, v]) => {
+    str = str.replace(new RegExp(`\\{${k}\\}`, 'g'), v);
+  });
+  return str;
+};
+
 let _abortCtrl = null;
 let _animationFrameId = null;
 let _canvas = null;
@@ -39,6 +51,34 @@ let _offsetX = 0;            // Canvas pan offset
 let _offsetY = 0;
 
 /* ------------------------------------------------------------------ *
+ *  i18n initialization
+ * ------------------------------------------------------------------ */
+function initI18nText() {
+  const setText = (id, key) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = t(key);
+  };
+  
+  setText('sim-load-btn', 'simulator.loadFile');
+  setText('sim-file-name', 'simulator.noFile');
+  setText('sim-playback-title', 'simulator.playback');
+  setText('sim-speed-label', 'simulator.speed');
+  setText('sim-color-nav-title', 'simulator.colorNav');
+  setText('sim-prev-color-btn', 'simulator.prevColor');
+  setText('sim-next-color-btn', 'simulator.nextColor');
+  setText('sim-color-info', 'simulator.noColorData');
+  setText('sim-overlay-text', 'simulator.emptyCanvas');
+  setText('sim-info-title', 'simulator.fileInfo');
+  setText('sim-no-file-text', 'simulator.noFile');
+  
+  const playBtn = document.getElementById('sim-play-btn');
+  if (playBtn) playBtn.title = t('simulator.play');
+  
+  const resetBtn = document.getElementById('sim-reset-btn');
+  if (resetBtn) resetBtn.title = t('simulator.reset');
+}
+
+/* ------------------------------------------------------------------ *
  *  Lifecycle
  * ------------------------------------------------------------------ */
 async function mount(container) {
@@ -47,6 +87,9 @@ async function mount(container) {
   injectCSS();
   const host = container || document.getElementById('viewHost');
   host.innerHTML = buildHTML();
+  
+  // Initialize i18n text
+  initI18nText();
   
   // Get canvas references
   _canvas = document.getElementById('sim-canvas');
@@ -104,15 +147,15 @@ function buildHTML() {
     </div>
     
     <div class="sim-file-selector">
-      <button id="sim-load-btn" class="sim-btn-primary">Load File…</button>
-      <div id="sim-file-name" class="sim-file-name">No file loaded</div>
+      <button id="sim-load-btn" class="sim-btn-primary"></button>
+      <div id="sim-file-name" class="sim-file-name"></div>
     </div>
     
     <div class="sim-playback">
-      <h4>Playback</h4>
+      <h4 id="sim-playback-title"></h4>
       <div class="sim-playback-controls">
-        <button id="sim-play-btn" class="sim-icon-btn" title="Play/Pause" disabled>▶</button>
-        <button id="sim-reset-btn" class="sim-icon-btn" title="Reset">⏮</button>
+        <button id="sim-play-btn" class="sim-icon-btn" disabled>▶</button>
+        <button id="sim-reset-btn" class="sim-icon-btn">⏮</button>
       </div>
       <div class="sim-timeline">
         <input type="range" id="sim-scrubber" class="sim-scrubber" min="0" max="100" value="0" disabled />
@@ -121,7 +164,7 @@ function buildHTML() {
         </div>
       </div>
       <div class="sim-speed-control">
-        <label>Speed:</label>
+        <label id="sim-speed-label"></label>
         <select id="sim-speed-select" disabled>
           <option value="0.5">0.5×</option>
           <option value="1" selected>1×</option>
@@ -133,12 +176,12 @@ function buildHTML() {
     </div>
     
     <div class="sim-color-nav">
-      <h4>Color Navigation</h4>
+      <h4 id="sim-color-nav-title"></h4>
       <div class="sim-color-controls">
-        <button id="sim-prev-color-btn" class="sim-btn-secondary" disabled>◀ Prev Color</button>
-        <button id="sim-next-color-btn" class="sim-btn-secondary" disabled>Next Color ▶</button>
+        <button id="sim-prev-color-btn" class="sim-btn-secondary" disabled></button>
+        <button id="sim-next-color-btn" class="sim-btn-secondary" disabled></button>
       </div>
-      <div id="sim-color-info" class="sim-color-info">No color data</div>
+      <div id="sim-color-info" class="sim-color-info"></div>
     </div>
   </aside>
 
@@ -146,17 +189,17 @@ function buildHTML() {
   <main class="sim-canvas-panel">
     <canvas id="sim-canvas"></canvas>
     <div id="sim-canvas-overlay" class="sim-canvas-overlay">
-      <p>Load an embroidery file to view simulation</p>
+      <p id="sim-overlay-text"></p>
     </div>
   </main>
 
   <!-- Right: Info -->
   <aside class="sim-info-panel">
     <div class="sim-panel-header">
-      <h3>File Info</h3>
+      <h3 id="sim-info-title"></h3>
     </div>
     <div id="sim-info-content" class="sim-info-content">
-      <p class="sim-empty-state">No file loaded</p>
+      <p class="sim-empty-state" id="sim-no-file-text"></p>
     </div>
   </aside>
 </div>
