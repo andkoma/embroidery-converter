@@ -382,19 +382,16 @@ just the first provider and new transports drop in without UI rewrites.
 
 ---
 
-## 11. Open Questions (need your input before/at Phase A start)
+## 11. Design Decisions (locked in 2026-08-05)
 
-- **Q1. Renderer tech:** OK to stay **vanilla JS + micro router/store** (no bundler), or do
-  you want a framework? *(Recommendation: stay vanilla.)*
-- **Q2. Navigation style:** left **icon rail** (recommended) vs. top tabs?
-- **Q3. Batch naming/conflicts:** default conflict policy — **suffix** `name (1).dst`,
-  overwrite, or skip? *(Recommendation: suffix.)*
-- **Q4. Gallery watching:** should managed folders **auto-refresh** on file changes (watchers)
-  or refresh manually? *(Recommendation: watch, with manual refresh button.)*
-- **Q5. Simulator export:** is exporting the animation to video/GIF desired in Phase C, or
-  keep C playback-only and revisit export later? *(Recommendation: playback-only first.)*
-- **Q6. Machine profiles:** can you share 2–3 target machines/brands so Phase D validation
-  starts with real constraints? *(Not blocking A–C.)*
+- **Q1. Renderer tech:** ✅ **Vanilla JS + micro router/store** (no bundler, no framework).
+- **Q2. Navigation style:** ✅ Left **icon rail** with view labels.
+- **Q3. Batch naming/conflicts:** ✅ Default to **suffix** `name (1).dst`; user can override.
+- **Q4. Gallery watching:** ✅ **Auto-watch** managed folders with a manual refresh button.
+- **Q5. Simulator export:** ✅ **Playback-only** in Phase C; revisit video/GIF export later.
+- **Q6. Machine profiles (Phase D):** Target brands confirmed:
+  - **Husqvarna** (Viking), **Brother**, **Singer**, **Pfaff**, **Janome**, **Bernina**.
+  - Validation to cover format support, filename constraints (8.3 on older FAT), folder conventions.
 
 ---
 
