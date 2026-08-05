@@ -196,6 +196,74 @@ function runBackend(subcommand, payload) {
 }
 
 /* ------------------------------------------------------------------ *
+ *  Streaming backend (NDJSON)
+ *
+ *  `runBackendStream` spawns the Python backend in streaming mode.
+ *  The backend emits one JSON object per line (NDJSON) to stdout;
+ *  each parsed line is forwarded to the renderer via the `backend:stream`
+ *  IPC channel, tagged with a caller-supplied `requestId` so multiple
+ *  concurrent streams can be demultiplexed.
+ * ------------------------------------------------------------------ */
+
+const _activeStreams = new Map(); // requestId → ChildProcess
+
+/**
+ * Spawn the backend and stream NDJSON lines to the renderer.
+ * Returns the ChildProcess (or null if the backend cannot be resolved).
+ */
+function runBackendStream(requestId, subcommand, payload) {
+  const backend = resolveBackend();
+
+  const _send = (data) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('backend:stream', { requestId, data });
+    }
+  };
+
+  if (!backend) {
+    _send({ type: 'error', message: 'No Python backend found. Install Python 3 and pyembroidery, or build the bundled binary.' });
+    _send({ type: 'done', count: 0 });
+    return null;
+  }
+
+  const args = [...backend.baseArgs, subcommand, JSON.stringify(payload || {})];
+  let child;
+  try {
+    child = spawn(backend.command, args, { windowsHide: true });
+  } catch (e) {
+    _send({ type: 'error', message: 'Failed to start backend: ' + e.message });
+    _send({ type: 'done', count: 0 });
+    return null;
+  }
+
+  let lineBuffer = '';
+
+  child.stdout.on('data', (chunk) => {
+    lineBuffer += chunk.toString();
+    const lines = lineBuffer.split('\n');
+    lineBuffer = lines.pop(); // keep partial last line
+    for (const line of lines) {
+      const t = line.trim();
+      if (!t) continue;
+      try { _send(JSON.parse(t)); } catch (_) { /* malformed line — skip */ }
+    }
+  });
+
+  child.on('close', () => {
+    // Flush any remaining buffered content after process exit
+    const t = lineBuffer.trim();
+    if (t) { try { _send(JSON.parse(t)); } catch (_) {} }
+    _activeStreams.delete(requestId);
+  });
+
+  child.on('error', (e) => {
+    _send({ type: 'error', message: 'Backend process error: ' + e.message });
+  });
+
+  return child;
+}
+
+/* ------------------------------------------------------------------ *
  *  Settings service
  *
  *  Persists application settings as JSON in the platform's userData dir.
@@ -451,4 +519,33 @@ ipcMain.handle('dialog:pickFolders', async () => {
   });
   if (result.canceled || !result.filePaths.length) return [];
   return result.filePaths;
+});
+
+/* ------------------------------------------------------------------ *
+ *  Streaming IPC — scan + thumbs + cancel
+ * ------------------------------------------------------------------ */
+
+/** Start a folder scan; NDJSON lines arrive via `backend:stream`. */
+ipcMain.handle('backend:scan', async (_e, { requestId, opts }) => {
+  const child = runBackendStream(requestId, 'scan', opts || {});
+  if (child) _activeStreams.set(requestId, child);
+  return { started: true, requestId };
+});
+
+/** Start thumbnail generation; NDJSON lines arrive via `backend:stream`. */
+ipcMain.handle('backend:thumbs', async (_e, { requestId, paths }) => {
+  const child = runBackendStream(requestId, 'thumbs', { paths: paths || [] });
+  if (child) _activeStreams.set(requestId, child);
+  return { started: true, requestId };
+});
+
+/** Abort a running stream by requestId. */
+ipcMain.handle('backend:cancel', async (_e, { requestId }) => {
+  const child = _activeStreams.get(requestId);
+  if (child) {
+    try { child.kill(); } catch (_) {}
+    _activeStreams.delete(requestId);
+    return { success: true };
+  }
+  return { success: false, reason: 'not-found' };
 });

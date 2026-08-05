@@ -68,6 +68,12 @@ def _emit(obj):
     sys.stdout.flush()
 
 
+def _emit_line(obj):
+    """Print one NDJSON line to stdout (for streaming subcommands)."""
+    sys.stdout.write(json.dumps(obj) + '\n')
+    sys.stdout.flush()
+
+
 def _fail(message, warnings=None):
     _emit({
         "success": False,
@@ -465,9 +471,125 @@ def cmd_formats(_args):
     _emit({"success": True, "formats": formats, "warnings": []})
 
 
+def cmd_scan(args):
+    """
+    Scan one or more folders for embroidery files; emit NDJSON lines.
+
+    Each discovered file produces one line:
+        {"type":"file","path":"/abs/path","name":"file.dst","ext":"dst",
+         "size":12345,"mtime":1700000000000}
+
+    On completion:
+        {"type":"done","count":N}
+
+    args = {
+      "folders":    ["/path1", "/path2"],  # required
+      "recursive":  true,                  # default true
+      "extensions": ["dst", "pes", ...]   # default: all known embroidery exts
+    }
+    """
+    DEFAULT_EXTS = {
+        'dst', 'pes', 'pec', 'jef', 'vp3', 'hus', 'xxx', 'exp', 'sew',
+        'emb', 'u01', 'tap', 'phb', 'phc', 'bro', 'dat', 'dsb', 'dsz',
+        'emd', '10o', '100', 'shv', 'jpx', 'ksm', 'max', 'tbf', 'gt',
+        'inb', 'zxy', 'stx',
+    }
+
+    folders   = args.get('folders') or []
+    recursive = args.get('recursive', True)
+    exts      = set(e.lower().lstrip('.') for e in (args.get('extensions') or []))
+    if not exts:
+        exts = DEFAULT_EXTS
+
+    if not folders:
+        _emit_line({'type': 'error', 'message': 'scan requires at least one folder'})
+        _emit_line({'type': 'done', 'count': 0})
+        return
+
+    count = 0
+    for folder in folders:
+        folder = os.path.abspath(folder)
+        if not os.path.isdir(folder):
+            _emit_line({'type': 'error', 'message': 'Not a directory: %s' % folder})
+            continue
+
+        if recursive:
+            walker = os.walk(folder)
+        else:
+            try:
+                names = os.listdir(folder)
+            except Exception as e:
+                _emit_line({'type': 'error', 'message': str(e)})
+                continue
+            walker = [(folder, [], names)]
+
+        for dirpath, _dirs, filenames in walker:
+            for fname in sorted(filenames):
+                dot = fname.rfind('.')
+                ext = fname[dot + 1:].lower() if dot >= 0 else ''
+                if ext not in exts:
+                    continue
+                full = os.path.join(dirpath, fname)
+                try:
+                    st = os.stat(full)
+                    _emit_line({
+                        'type':  'file',
+                        'path':  full,
+                        'name':  fname,
+                        'ext':   ext,
+                        'size':  st.st_size,
+                        'mtime': int(st.st_mtime * 1000),
+                    })
+                    count += 1
+                except Exception as e:
+                    _emit_line({'type': 'error', 'path': full, 'message': str(e)})
+
+    _emit_line({'type': 'done', 'count': count})
+
+
+def cmd_thumbs(args):
+    """
+    Inspect a list of embroidery files and emit NDJSON thumbnail lines.
+
+    Each successful file:
+        {"type":"thumb","path":"/abs/path","meta":{...},"preview":{...}}
+
+    Per-file error (stream continues):
+        {"type":"error","path":"/abs/path","message":"..."}
+
+    On completion:
+        {"type":"done","count":N}
+
+    args = {
+      "paths":      ["/path1", ...],  # required
+      "max_points": 2000              # optional, default 2000
+    }
+    """
+    paths      = args.get('paths') or []
+    max_points = int(args.get('max_points') or 2000)
+
+    if not paths:
+        _emit_line({'type': 'error', 'message': 'thumbs requires at least one path'})
+        _emit_line({'type': 'done', 'count': 0})
+        return
+
+    count = 0
+    for p in paths:
+        try:
+            pattern = _load(p)
+            meta    = _metadata(pattern)
+            preview = _preview_polylines(pattern, max_points)
+            _emit_line({'type': 'thumb', 'path': p, 'meta': meta, 'preview': preview})
+            count += 1
+        except Exception as e:
+            _emit_line({'type': 'error', 'path': p, 'message': str(e)})
+
+    _emit_line({'type': 'done', 'count': count})
+
+
 def main():
     if len(sys.argv) < 2:
-        _fail("Usage: convert.py <inspect|convert|formats> '<json args>'")
+        _fail("Usage: convert.py <inspect|convert|formats|scan|thumbs> '<json args>'")
 
     command = sys.argv[1]
     raw = sys.argv[2] if len(sys.argv) > 2 else "{}"
@@ -483,6 +605,10 @@ def main():
             cmd_convert(args)
         elif command == "formats":
             cmd_formats(args)
+        elif command == "scan":
+            cmd_scan(args)
+        elif command == "thumbs":
+            cmd_thumbs(args)
         else:
             _fail("Unknown command: %s" % command)
     except SystemExit:
