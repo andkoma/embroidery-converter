@@ -114,7 +114,17 @@ const byId = (id) => _nodes.find(n => n.id === id);
 const childrenOf = (id) => _nodes.filter(n => n.parentId === (id || null));
 function descendantIds(id) {
   const out = [];
-  const walk = (pid) => childrenOf(pid).forEach(c => { out.push(c.id); walk(c.id); });
+  const visited = new Set();  // Prevent infinite recursion from circular refs
+  const walk = (pid) => {
+    if (visited.has(pid)) return;  // Skip if already visited
+    visited.add(pid);
+    childrenOf(pid).forEach(c => { 
+      if (!visited.has(c.id)) {  // Additional check before recursing
+        out.push(c.id); 
+        walk(c.id); 
+      }
+    });
+  };
   walk(id);
   return out;
 }
@@ -275,7 +285,14 @@ function renderTree() {
   wireTree();
 }
 
-function renderNode(node, depth) {
+function renderNode(node, depth, _visited = new Set()) {
+  // Prevent infinite recursion from circular parent references
+  if (_visited.has(node.id)) {
+    console.warn('Circular reference detected in collections tree, skipping:', node.id);
+    return '';
+  }
+  _visited.add(node.id);
+  
   const kids = childrenOf(node.id);
   const hasKids = kids.length > 0;
   const isOpen = _expanded.has(node.id);
@@ -297,7 +314,7 @@ function renderNode(node, depth) {
         <button class="cl-node-btn" data-del="${node.id}" title="${esc(t('collections.delete'))}">🗑</button>
       </span>
     </div>`;
-  if (hasKids && isOpen) html += kids.map(k => renderNode(k, depth + 1)).join('');
+  if (hasKids && isOpen) html += kids.map(k => renderNode(k, depth + 1, _visited)).join('');
   return html;
 }
 
