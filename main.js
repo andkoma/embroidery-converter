@@ -196,6 +196,86 @@ function runBackend(subcommand, payload) {
 }
 
 /* ------------------------------------------------------------------ *
+ *  Settings service
+ *
+ *  Persists application settings as JSON in the platform's userData dir.
+ *  Settings are read on first access and written on every mutation.
+ *  The IPC handlers (settings:get / settings:set) below let the renderer
+ *  sync to and from this file.
+ * ------------------------------------------------------------------ */
+
+const SETTINGS_DEFAULTS = {
+  language: 'en',
+  theme: 'light',
+  managedFolders: [],          // { id, path, recursive, watch }[]
+  recentOutputDirs: [],        // string[] — last used output dirs
+  gallery: {
+    typeFilter: ['pes','dst','jef','vp3','hus','xxx','exp','sew'],
+    sort: 'name',
+    thumbSize: 128,
+  },
+  transfer: {
+    favoriteDestinations: [],  // { label, path }[]
+  },
+};
+
+let _settingsCache = null;
+
+function settingsPath() {
+  return path.join(app.getPath('userData'), 'settings.json');
+}
+
+function loadSettings() {
+  if (_settingsCache) return _settingsCache;
+  try {
+    const raw = fs.readFileSync(settingsPath(), 'utf8');
+    // Deep-merge with defaults so new keys added in future releases are
+    // automatically present without requiring migration logic.
+    _settingsCache = deepMerge(SETTINGS_DEFAULTS, JSON.parse(raw));
+  } catch (_) {
+    // File doesn't exist yet or is corrupt — start fresh.
+    _settingsCache = JSON.parse(JSON.stringify(SETTINGS_DEFAULTS));
+  }
+  return _settingsCache;
+}
+
+function saveSettings(settings) {
+  _settingsCache = settings;
+  try {
+    fs.mkdirSync(path.dirname(settingsPath()), { recursive: true });
+    fs.writeFileSync(settingsPath(), JSON.stringify(settings, null, 2), 'utf8');
+  } catch (e) {
+    console.error('Failed to save settings:', e.message);
+  }
+}
+
+/** Shallow+deep merge: new keys from source fill gaps in target. */
+function deepMerge(defaults, overrides) {
+  const result = Object.assign({}, defaults);
+  for (const key of Object.keys(overrides)) {
+    if (
+      overrides[key] !== null &&
+      typeof overrides[key] === 'object' &&
+      !Array.isArray(overrides[key]) &&
+      typeof defaults[key] === 'object' &&
+      !Array.isArray(defaults[key])
+    ) {
+      result[key] = deepMerge(defaults[key], overrides[key]);
+    } else {
+      result[key] = overrides[key];
+    }
+  }
+  return result;
+}
+
+/** Add a dir to the recent-output-dirs list (capped at 10, most-recent first). */
+function recordRecentOutputDir(dir) {
+  const s = loadSettings();
+  const recent = [dir, ...(s.recentOutputDirs || []).filter(d => d !== dir)].slice(0, 10);
+  saveSettings({ ...s, recentOutputDirs: recent });
+}
+
+/* ------------------------------------------------------------------ *
  *  Window
  * ------------------------------------------------------------------ */
 
@@ -335,4 +415,40 @@ ipcMain.handle('shell:openPath', async (_e, p) => {
 ipcMain.handle('shell:showItem', async (_e, p) => {
   shell.showItemInFolder(p);
   return true;
+});
+
+/* ------------------------------------------------------------------ *
+ *  Settings IPC
+ * ------------------------------------------------------------------ */
+
+ipcMain.handle('settings:get', async () => {
+  return loadSettings();
+});
+
+/**
+ * Patch-merge incoming updates into the stored settings and persist.
+ * The renderer sends only the fields it wants to change; existing fields
+ * not present in `patch` are left untouched.
+ */
+ipcMain.handle('settings:set', async (_e, patch) => {
+  if (!patch || typeof patch !== 'object') return { success: false, error: 'Invalid patch' };
+  const current = loadSettings();
+  const updated  = deepMerge(current, patch);
+  saveSettings(updated);
+  // If the output dir changed, record it in the recents list too.
+  if (patch.lastOutputDir) recordRecentOutputDir(patch.lastOutputDir);
+  return { success: true };
+});
+
+/* ------------------------------------------------------------------ *
+ *  Folder-picker IPC (for Batch & Gallery managed folders)
+ * ------------------------------------------------------------------ */
+
+ipcMain.handle('dialog:pickFolders', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Select folders',
+    properties: ['openDirectory', 'multiSelections', 'createDirectory'],
+  });
+  if (result.canceled || !result.filePaths.length) return [];
+  return result.filePaths;
 });

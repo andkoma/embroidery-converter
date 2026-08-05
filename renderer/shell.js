@@ -40,9 +40,27 @@
   }
 
   /* ---------------------------------------------------------------- *
-   *  Language initialisation
+   *  Settings bootstrap — load from main process, seed the store
+   * ---------------------------------------------------------------- */
+  let persistedSettings = {};
+  try {
+    persistedSettings = await window.api.getSettings();
+  } catch (_) { /* first launch or IPC unavailable — use defaults */ }
+
+  // Seed store with persisted settings (deep merge with store defaults)
+  if (persistedSettings && typeof persistedSettings === 'object') {
+    store.patch({ settings: { ...store.get('settings'), ...persistedSettings } });
+  }
+
+  /* ---------------------------------------------------------------- *
+   *  Language initialisation (settings → localStorage → browser → 'en')
    * ---------------------------------------------------------------- */
   function detectLanguage() {
+    // Priority: persisted settings > localStorage > browser lang > 'en'
+    if (persistedSettings && persistedSettings.language &&
+        window.I18N && window.I18N[persistedSettings.language]) {
+      return persistedSettings.language;
+    }
     const saved = (() => { try { return localStorage.getItem('ec_lang'); } catch (_) { return null; } })();
     if (saved && window.I18N && window.I18N[saved]) return saved;
     const nav = (navigator.language || 'en').slice(0, 2).toLowerCase();
@@ -59,6 +77,8 @@
       const lang = langSelect.value;
       store.set('settings.language', lang);
       try { localStorage.setItem('ec_lang', lang); } catch (_) {}
+      // Persist to main-process settings file
+      window.api.setSettings({ language: lang }).catch(() => {});
       applyStaticI18n(); // re-apply nav labels; the view re-renders via store subscription
     });
   }
