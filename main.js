@@ -522,6 +522,164 @@ ipcMain.handle('dialog:pickFolders', async () => {
 });
 
 /* ------------------------------------------------------------------ *
+ *  Batch conversion IPC
+ *
+ *  Runs sequential conversions for multiple files, streaming per-file
+ *  progress back to the renderer.
+ * ------------------------------------------------------------------ */
+
+/**
+ * Run a batch conversion job.
+ * @param {Object} job - { requestId, files: FileEntry[], profile: BatchProfile }
+ * @returns {Promise<{started: true, requestId}>}
+ */
+ipcMain.handle('backend:runBatch', async (_e, job) => {
+  const { requestId, files, profile } = job;
+  if (!requestId || !Array.isArray(files) || files.length === 0) {
+    return { started: false, error: 'Invalid batch job' };
+  }
+
+  const _send = (data) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('backend:stream', { requestId, data });
+    }
+  };
+
+  // Run conversions sequentially (to avoid overwhelming the system)
+  setImmediate(async () => {
+    let completed = 0;
+    let failed = 0;
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const inputPath = file.path;
+
+      try {
+        // 1. Resolve output path
+        const outputPath = await _resolveOutputPath(inputPath, profile);
+        
+        if (!outputPath) {
+          // Conflict mode was 'skip'
+          _send({
+            type: 'progress',
+            index: i,
+            total: files.length,
+            path: inputPath,
+            status: 'skipped',
+            message: 'File already exists (skip mode)',
+          });
+          continue;
+        }
+
+        // 2. Build conversion payload
+        const payload = {
+          input_path: inputPath,
+          output_path: outputPath,
+          output_format: profile.outputFormat || 'pes',
+          options: {},
+        };
+
+        // Apply resize options
+        if (profile.resizeWidthMm)  payload.options.resize_width_mm  = profile.resizeWidthMm;
+        if (profile.resizeHeightMm) payload.options.resize_height_mm = profile.resizeHeightMm;
+        if (profile.resampleStitches) payload.options.resample_stitches = true;
+        if (profile.colorLimit) payload.options.color_limit = profile.colorLimit;
+
+        // 3. Convert
+        _send({
+          type: 'progress',
+          index: i,
+          total: files.length,
+          path: inputPath,
+          status: 'running',
+          outputPath,
+        });
+
+        const result = await runBackend('convert', payload);
+
+        if (result.success) {
+          completed++;
+          _send({
+            type: 'progress',
+            index: i,
+            total: files.length,
+            path: inputPath,
+            status: 'done',
+            outputPath,
+            warnings: result.warnings || [],
+          });
+        } else {
+          failed++;
+          _send({
+            type: 'progress',
+            index: i,
+            total: files.length,
+            path: inputPath,
+            status: 'error',
+            error: result.error || 'Conversion failed',
+          });
+        }
+      } catch (err) {
+        failed++;
+        _send({
+          type: 'progress',
+          index: i,
+          total: files.length,
+          path: inputPath,
+          status: 'error',
+          error: err.message || String(err),
+        });
+      }
+    }
+
+    // Send completion event
+    _send({
+      type: 'done',
+      total: files.length,
+      completed,
+      failed,
+    });
+  });
+
+  return { started: true, requestId };
+});
+
+/**
+ * Resolve the output path for a file based on the batch profile.
+ * Handles conflict modes: suffix, overwrite, skip.
+ * @returns {Promise<string|null>} output path, or null if skipped
+ */
+async function _resolveOutputPath(inputPath, profile) {
+  const ext = profile.outputFormat || 'pes';
+  const baseName = path.basename(inputPath, path.extname(inputPath));
+  const outputDir = profile.outputDir || path.dirname(inputPath);
+
+  let outputPath = path.join(outputDir, `${baseName}.${ext}`);
+
+  // Check for conflicts
+  if (fs.existsSync(outputPath)) {
+    const mode = profile.conflictMode || 'suffix';
+
+    if (mode === 'skip') {
+      return null; // Signal to skip this file
+    } else if (mode === 'overwrite') {
+      // Use the path as-is (will overwrite)
+      return outputPath;
+    } else if (mode === 'suffix') {
+      // Add (1), (2), ... until we find a free name
+      let counter = 1;
+      while (fs.existsSync(outputPath)) {
+        outputPath = path.join(outputDir, `${baseName} (${counter}).${ext}`);
+        counter++;
+        if (counter > 999) break; // Safety limit
+      }
+    }
+  }
+
+  return outputPath;
+}
+
+/* ------------------------------------------------------------------ *
  *  Streaming IPC — scan + thumbs + cancel
  * ------------------------------------------------------------------ */
 

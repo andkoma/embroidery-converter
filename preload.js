@@ -89,7 +89,20 @@ contextBridge.exposeInMainWorld('api', {
   },
 
   /**
-   * Cancel a running scan or thumbs stream.
+   * Run a batch conversion job.
+   * @param {{ files: object[], profile: object }} job
+   * @param {function} onProgress  Called for each progress event (running/done/error/skipped).
+   * @returns {Promise<string>} requestId
+   */
+  runBatch: async (job, onProgress) => {
+    const requestId = _newReqId();
+    _streamCallbacks.set(requestId, onProgress);
+    await ipcRenderer.invoke('backend:runBatch', { requestId, ...job });
+    return requestId;
+  },
+
+  /**
+   * Cancel a running scan, thumbs, or batch stream.
    * @param {string} requestId
    */
   cancelStream: (requestId) => {

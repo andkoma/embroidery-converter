@@ -348,6 +348,7 @@ function injectStyles() {
 .bv-st-done    { color:var(--success,#22a05a); font-weight:600; }
 .bv-st-error   { color:var(--error,#e53e3e);  font-weight:600; }
 .bv-st-running { color:var(--accent,#4a6ef5); }
+.bv-st-skipped { color:var(--muted,#999); font-style:italic; }
 
 /* ── Empty states ── */
 .bv-empty-table {
@@ -524,6 +525,7 @@ function statusIcon(s) {
     case 'done':    return '✓';
     case 'error':   return '✗';
     case 'running': return '…';
+    case 'skipped': return '–';
     default:        return '';
   }
 }
@@ -646,6 +648,41 @@ function setScanStatus(html) {
 }
 
 /* ------------------------------------------------------------------ *
+ *  Batch conversion runner
+ * ------------------------------------------------------------------ */
+async function runBatchConversion(files, profile) {
+  return new Promise((resolve, reject) => {
+    window.api.runBatch({ files, profile }, (data) => {
+      if (data.type === 'progress') {
+        // Update the file's status in _allFiles
+        const file = _allFiles.find(f => f.path === data.path);
+        if (file) {
+          file.status = data.status;
+          if (data.status === 'done') {
+            file.outputPath = data.outputPath;
+            file.warnings   = data.warnings || [];
+          } else if (data.status === 'error') {
+            file.error = data.error;
+          } else if (data.status === 'skipped') {
+            file.message = data.message;
+          }
+          // Re-render to show updated status
+          renderRows();
+        }
+      } else if (data.type === 'done') {
+        // Batch completed
+        const msg = `Conversion complete!\n${data.completed} succeeded, ${data.failed} failed.`;
+        alert(msg);
+        resolve();
+      } else if (data.type === 'error' && data.path === undefined) {
+        // Fatal error
+        reject(new Error(data.message || 'Batch conversion failed'));
+      }
+    }).catch(reject);
+  });
+}
+
+/* ------------------------------------------------------------------ *
  *  Event wiring
  * ------------------------------------------------------------------ */
 function wireEvents() {
@@ -715,14 +752,31 @@ function wireEvents() {
       }
     }, { signal: sig });
 
-  // Convert (stub — A5 implements the run logic)
+  // Convert button
   document.getElementById('bv-convert-btn')
-    ?.addEventListener('click', () => {
-      // A5: gather profile options + selected file list, invoke batch run
-      window.events && window.events.emit('batch:convert-requested', {
-        files:   _filtered.filter(f => _selected.has(f.path)),
-        profile: readProfile(),
-      });
+    ?.addEventListener('click', async () => {
+      const selectedFiles = _filtered.filter(f => _selected.has(f.path));
+      if (selectedFiles.length === 0) return;
+
+      const profile = readProfile();
+      const btn = document.getElementById('bv-convert-btn');
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Converting…';
+      }
+
+      try {
+        await runBatchConversion(selectedFiles, profile);
+      } catch (err) {
+        console.error('Batch conversion error:', err);
+        alert('Batch conversion failed: ' + (err.message || String(err)));
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = 'Convert Selected';
+        }
+        updateCounts();
+      }
     }, { signal: sig });
 }
 
