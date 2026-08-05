@@ -185,7 +185,7 @@ jobs:
         with:
           path: ./release-artifacts
       
-      - name: List downloaded artifacts
+      - name: List release assets
         run: find release-artifacts -type f \( -name "*.dmg" -o -name "*.exe" \) -exec ls -lah {} +
       
       - name: Debug - Check token availability
@@ -200,7 +200,9 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          files: release-artifacts/**/*
+          files: |
+            release-artifacts/**/*.dmg
+            release-artifacts/**/*.exe
           draft: false
           prerelease: false
           generate_release_notes: true
