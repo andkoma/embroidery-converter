@@ -207,4 +207,4 @@ A: Should work, but may take 10-30 seconds depending on file size and your compu
 
 **Happy embroidering!** 🧵✨
 
-*Last updated: August 2024*
+*Last updated: August 2026*

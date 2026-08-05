@@ -216,4 +216,4 @@ A: See "Download Issues?" section above or check [GETTING_STARTED.md](./GETTING_
 
 **Happy converting!** 🧵✨
 
-*Last updated: August 2024*
+*Last updated: August 2026*

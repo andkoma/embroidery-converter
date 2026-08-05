@@ -130,4 +130,4 @@ For questions about licenses or attribution:
 
 ---
 
-**Last Updated:** August 2024
+**Last Updated:** August 2026
