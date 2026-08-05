@@ -119,6 +119,23 @@ const I18N = {
     'gallery.addToBatch': 'Add to Batch',
     'gallery.openSimulator': 'Open in Simulator',
     'gallery.showInFolder': 'Show in Folder',
+
+    // Simulator view
+    'simulator.title': 'Simulator',
+    'simulator.loadFile': 'Load File…',
+    'simulator.noFile': 'No file loaded',
+    'simulator.playback': 'Playback',
+    'simulator.play': 'Play/Pause',
+    'simulator.reset': 'Reset',
+    'simulator.speed': 'Speed:',
+    'simulator.colorNav': 'Color Navigation',
+    'simulator.prevColor': '◀ Prev Color',
+    'simulator.nextColor': 'Next Color ▶',
+    'simulator.noColorData': 'No color data',
+    'simulator.fileInfo': 'File Info',
+    'simulator.emptyCanvas': 'Load an embroidery file to view simulation',
+    'simulator.loading': 'Loading file...',
+    'simulator.colorPalette': 'Color Palette',
   },
 
   de: {
@@ -230,6 +247,23 @@ const I18N = {
     'gallery.addToBatch': 'Zu Stapel hinzufügen',
     'gallery.openSimulator': 'In Simulator öffnen',
     'gallery.showInFolder': 'Im Ordner anzeigen',
+
+    // Simulator view
+    'simulator.title': 'Simulator',
+    'simulator.loadFile': 'Datei laden…',
+    'simulator.noFile': 'Keine Datei geladen',
+    'simulator.playback': 'Wiedergabe',
+    'simulator.play': 'Wiedergabe/Pause',
+    'simulator.reset': 'Zurücksetzen',
+    'simulator.speed': 'Geschwindigkeit:',
+    'simulator.colorNav': 'Farbnavigation',
+    'simulator.prevColor': '◀ Vorherige Farbe',
+    'simulator.nextColor': 'Nächste Farbe ▶',
+    'simulator.noColorData': 'Keine Farbdaten',
+    'simulator.fileInfo': 'Dateiinfo',
+    'simulator.emptyCanvas': 'Stickdatei laden, um Simulation anzuzeigen',
+    'simulator.loading': 'Lade Datei...',
+    'simulator.colorPalette': 'Farbpalette',
   },
 
   fr: {
@@ -341,6 +375,23 @@ const I18N = {
     'gallery.addToBatch': 'Ajouter au lot',
     'gallery.openSimulator': 'Ouvrir dans le simulateur',
     'gallery.showInFolder': 'Afficher dans le dossier',
+
+    // Simulator view
+    'simulator.title': 'Simulateur',
+    'simulator.loadFile': 'Charger un fichier…',
+    'simulator.noFile': 'Aucun fichier chargé',
+    'simulator.playback': 'Lecture',
+    'simulator.play': 'Lecture/Pause',
+    'simulator.reset': 'Réinitialiser',
+    'simulator.speed': 'Vitesse :',
+    'simulator.colorNav': 'Navigation couleur',
+    'simulator.prevColor': '◀ Couleur préc.',
+    'simulator.nextColor': 'Couleur suiv. ▶',
+    'simulator.noColorData': 'Pas de données de couleur',
+    'simulator.fileInfo': 'Info fichier',
+    'simulator.emptyCanvas': 'Charger un fichier de broderie pour voir la simulation',
+    'simulator.loading': 'Chargement du fichier...',
+    'simulator.colorPalette': 'Palette de couleurs',
   },
 };
 

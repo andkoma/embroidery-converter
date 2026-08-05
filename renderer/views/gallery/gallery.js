@@ -858,7 +858,8 @@ function wireEvents() {
           window.router && window.router.load('batch');
           break;
         case 'simulate':
-          // Navigate to Simulator (future)
+          // Navigate to Simulator view and send file
+          window.events && window.events.emit('gallery:send-to-simulator', { file: _selected });
           window.router && window.router.load('simulator');
           break;
         case 'show':

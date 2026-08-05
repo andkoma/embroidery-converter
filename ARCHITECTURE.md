@@ -1,6 +1,6 @@
 # 🏗️ Embroidery Converter — Architecture & Design Plan
 
-**Status:** ✅ Phase A & B COMPLETE · **Version:** 0.3 · **Date:** 2026-08-05
+**Status:** ✅ Phase A, B & C COMPLETE · **Version:** 0.4 · **Date:** 2026-08-05
 **Author org:** orgware.ai (andkoma@akopp.de) · *Created with AI support.*
 
 This document is the **design blueprint** for evolving the app from a single-screen
@@ -370,11 +370,23 @@ just the first provider and new transports drop in without UI rewrites.
 thumbnails in grid, clicks for detail view with metadata and actions (Send to
 Convert/Batch/Simulator, Show in Folder).
 
-**Commits:** 0b05d79 (B1: skeleton + folder mgmt), [B2: lazy loading + i18n]
+**Commits:** 0b05d79 (B1: skeleton + folder mgmt), be4d789 (B2-B7: lazy loading + i18n)
 
-### Phase C — Stitch Simulator
-- `simulate` timeline; canvas player with scrub/speed/color-jump. Exit: smooth playback of
-  a real file's stitch-out; hand-off from Gallery.
+### Phase C — Stitch Simulator  ✅ **COMPLETE**
+- C1. ✅ Simulator view skeleton with three-panel layout (Controls | Canvas | Info)
+- C2. ✅ HTML5 Canvas rendering with progressive stitch-by-stitch drawing
+- C3. ✅ Playback controls: Play/Pause, Reset, Timeline scrubber, Speed (0.5x-10x)
+- C4. ✅ Color navigation: Prev/Next color block jumps, palette display with click-to-jump
+- C5. ✅ Gallery integration: Hand-off via `gallery:send-to-simulator` event
+- C6. ✅ Animation engine: requestAnimationFrame with adjustable stitches/sec
+- C7. ✅ i18n (EN/DE/FR simulator.* keys) + syntax validation
+
+**Exit criteria:** ✅ user loads embroidery file (via button or Gallery hand-off), sees
+canvas-rendered stitches with actual thread colors, plays/pauses animation with smooth
+playback at adjustable speed, scrubs timeline to any stitch position, jumps between color
+blocks using prev/next buttons or palette clicks.
+
+**Commits:** [C1-C7: complete simulator implementation]
 
 ### Phase D — Machine Transfer
 - `listVolumes` + `probe-destination`; destination picker with removable/network mounts +
