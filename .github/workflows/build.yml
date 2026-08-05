@@ -33,6 +33,14 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
       
+      - name: Verify npm dependencies (macOS)
+        run: |
+          echo "Node version:" && node --version
+          echo "npm version:" && npm --version
+          echo "electron-builder version:" && npx electron-builder --version
+          echo "npm list electron:" && npm list electron 2>/dev/null || true
+          echo "npm list electron-builder:" && npm list electron-builder 2>/dev/null || true
+      
       - name: Install PyInstaller
         run: pip install pyinstaller
       
@@ -94,6 +102,14 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
       
+      - name: Verify npm dependencies (Windows)
+        run: |
+          Write-Host "Node version:" ; node --version
+          Write-Host "npm version:" ; npm --version
+          Write-Host "electron-builder version:" ; npx electron-builder --version
+          Write-Host "npm list electron:" ; npm list electron 2>$null || Write-Host "Not found"
+          Write-Host "npm list electron-builder:" ; npm list electron-builder 2>$null || Write-Host "Not found"
+      
       - name: Install PyInstaller
         run: pip install pyinstaller
       
@@ -101,29 +117,27 @@ jobs:
         run: npm run python:bundle
         
       - name: List build artifacts
-        run: dir pybuild\dist\ 2>nul || echo "No pybuild\dist yet"
+        run: if (Test-Path "pybuild\dist") { dir pybuild\dist } else { Write-Host "No pybuild\dist yet" }
       
       - name: Verify Python bundle exists
-        run: if exist "pybuild\dist\convert.exe" (echo ✅ Python bundle exists) else (echo ❌ Python bundle missing)
+        run: if (Test-Path "pybuild\dist\convert.exe") { Write-Host "✅ Python bundle exists" } else { Write-Host "❌ Python bundle missing" }
       
       - name: Build Windows
         run: npx electron-builder --win --x64
       
       - name: List release artifacts
-        run: dir release\ || echo "No release folder"
+        run: if (Test-Path "release") { dir release } else { Write-Host "No release folder" }
       
       - name: Find EXE file
         id: find_exe
         run: |
-          for /r release %%F in (*.exe) do (
-            echo Found EXE: %%F
-            echo exe_file=%%F >> %GITHUB_OUTPUT%
-            goto found
-          )
-          :found
-          if not defined exe_file (
-            echo No EXE file found
-          )
+          $exeFile = Get-ChildItem -Path release -Name -Recurse -Include *.exe | Select-Object -First 1
+          if ($exeFile) {
+            Write-Host "Found EXE: $exeFile"
+            Write-Host "exe_file=$exeFile" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          } else {
+            Write-Host "No EXE file found"
+          }
       
       - name: Upload Windows artifact
         if: steps.find_exe.outputs.exe_file != ''
