@@ -188,6 +188,7 @@ function buildHTML() {
     </div>
     <div class="gv-marked-bar" id="gv-marked-bar">
       <span id="gv-marked-count" class="gv-marked-count"></span>
+      <button id="gv-deselect-all" class="gv-link-btn">${esc(t('gallery.deselectAll'))}</button>
       <button id="gv-send-collection" class="gv-send-batch gv-send-collection">${esc(t('gallery.sendToCollection'))}</button>
       <button id="gv-send-batch" class="gv-send-batch">${esc(t('gallery.sendToBatch'))} →</button>
     </div>
@@ -348,6 +349,11 @@ function injectCSS() {
 }
 .gv-marked-bar.show { display: flex; }
 .gv-marked-count { font-size: 12px; color: var(--text, #1c2333); font-weight: 600; }
+.gv-link-btn {
+  padding: 4px 8px; border: none; background: none; cursor: pointer; font-size: 12px;
+  color: var(--accent,#4a6ef5); text-decoration: underline; transition: opacity .15s;
+}
+.gv-link-btn:hover { opacity: 0.8; }
 .gv-send-batch {
   margin-left: auto; padding: 6px 14px; border: none; border-radius: 7px;
   background: var(--accent, #5b5bd6); color: #fff; font-size: 12px; font-weight: 600;
@@ -1082,6 +1088,13 @@ function wireEvents() {
   // View toggle
   document.getElementById('gv-view-card')?.addEventListener('click', () => setViewMode('card'), { signal: sig });
   document.getElementById('gv-view-list')?.addEventListener('click', () => setViewMode('list'), { signal: sig });
+
+  // Deselect all marked files
+  document.getElementById('gv-deselect-all')?.addEventListener('click', () => {
+    _marked.clear();
+    renderGrid();
+    updateToolbar();
+  }, { signal: sig });
 
   // Send to batch
   document.getElementById('gv-send-batch')?.addEventListener('click', sendToBatch, { signal: sig });
