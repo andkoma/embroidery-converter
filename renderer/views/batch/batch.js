@@ -206,6 +206,8 @@ function buildHTML() {
 
     <div class="bv-table-footer">
       <span id="bv-sel-count" class="bv-sel-count"></span>
+      <button id="bv-add-project" class="bv-sec-btn" disabled></button>
+      <button id="bv-add-collection" class="bv-sec-btn" disabled></button>
       <button id="bv-convert-btn" class="bv-convert-btn" disabled></button>
     </div>
   </main>
@@ -467,6 +469,13 @@ function injectStyles() {
 }
 .bv-convert-btn:disabled { opacity: .45; cursor: default; }
 .bv-convert-btn:hover:not(:disabled) { background: var(--accent-hover,#3b5fe4); }
+.bv-sec-btn {
+  padding: 6px 12px; border-radius: 7px; cursor: pointer; font-size: 12px;
+  border: 1px solid var(--border,#dde1ef); background: var(--input-bg,#fff);
+  color: var(--text,#1a2340); transition: background .15s, border-color .15s, opacity .15s;
+}
+.bv-sec-btn:disabled { opacity: .45; cursor: default; }
+.bv-sec-btn:hover:not(:disabled) { border-color: var(--accent,#4a6ef5); color: var(--accent,#4a6ef5); }
 
 /* ── Profile panel ── */
 .bv-profile-body { padding: 12px; overflow-y: auto; flex: 1; }
@@ -616,6 +625,10 @@ function updateCounts() {
   if (countEl)    countEl.textContent = t('batch.files', {n: _filtered.length});
   if (selEl)      selEl.textContent   = t('batch.selected', {n: selCount});
   if (convertBtn) convertBtn.disabled = selCount === 0;
+  const addProjBtn = document.getElementById('bv-add-project');
+  const addCollBtn = document.getElementById('bv-add-collection');
+  if (addProjBtn) addProjBtn.disabled = selCount === 0;
+  if (addCollBtn) addCollBtn.disabled = selCount === 0;
   if (selAll) {
     const allSel = _filtered.length > 0 && selCount === _filtered.length;
     selAll.checked       = allSel;
@@ -1271,6 +1284,33 @@ function wireEvents() {
         updateCounts();
       }
     }, { signal: sig });
+
+  // Add selection to a Project / Collection (create new or add to existing)
+  const selectionFiles = () => _filtered
+    .filter(f => _selected.has(f.path))
+    .map(f => ({ path: f.path, name: f.name, ext: f.ext, mtime: f.mtime, size: f.size, preview: f.preview || null }));
+
+  document.getElementById('bv-add-project')
+    ?.addEventListener('click', async () => {
+      const files = selectionFiles();
+      if (!files.length || !window.Pickers) return;
+      const res = await window.Pickers.addToProject(files);
+      if (res && res.ok) {
+        setScanStatus(escBv(t('batch.addedToProject', { n: res.added, name: res.name })));
+        setTimeout(() => { if (!_scanning) setScanStatus(''); }, 3000);
+      }
+    }, { signal: sig });
+
+  document.getElementById('bv-add-collection')
+    ?.addEventListener('click', async () => {
+      const files = selectionFiles();
+      if (!files.length || !window.Pickers) return;
+      const res = await window.Pickers.addToCollection(files);
+      if (res && res.ok) {
+        setScanStatus(escBv(t('batch.addedToCollection', { n: res.added, name: res.name })));
+        setTimeout(() => { if (!_scanning) setScanStatus(''); }, 3000);
+      }
+    }, { signal: sig });
 }
 
 /** Collect current profile values from the UI. */
@@ -1357,6 +1397,10 @@ async function mount(container, store) {
   // Set initial i18n text
   const convertBtn = document.getElementById('bv-convert-btn');
   if (convertBtn) convertBtn.textContent = t('batch.convertBtn');
+  const addProjBtn = document.getElementById('bv-add-project');
+  if (addProjBtn) addProjBtn.textContent = t('pick.addToProject');
+  const addCollBtn = document.getElementById('bv-add-collection');
+  if (addCollBtn) addCollBtn.textContent = t('pick.addToCollection');
 
   const noFoldersMsg = document.getElementById('bv-no-folders-msg');
   if (noFoldersMsg) noFoldersMsg.innerHTML = t('batch.noFolders').replace('\n', '<br>');

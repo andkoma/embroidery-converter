@@ -468,6 +468,8 @@ function renderSelBar() {
     <span class="cl-sel-count">${esc(t('collections.selectedCount', { n: _selectedFiles.size }))}</span>
     <button id="cl-sel-clear" class="cl-btn-link">${esc(t('collections.clearSel'))}</button>
     ${moveOpts ? `<span class="cl-move-wrap"><label>${esc(t('collections.moveTo'))}</label><select id="cl-move-select" class="cl-move-select"><option value="">—</option>${moveOpts}</select></span>` : ''}
+    <button id="cl-sel-project" class="cl-btn-sec">${esc(t('pick.addToProject'))}</button>
+    <button id="cl-sel-transfer" class="cl-btn-sec">${esc(t('pick.sendToTransfer'))}</button>
     <button id="cl-sel-remove" class="cl-btn-danger">${esc(t('collections.removeFromCollection'))}</button>`;
   const sig = _abort.signal;
   document.getElementById('cl-sel-clear')?.addEventListener('click', () => { _selectedFiles.clear(); renderFiles(); renderInspector(); }, { signal: sig });
@@ -479,6 +481,30 @@ function renderSelBar() {
     const target = e.target.value;
     if (target) { await moveFilesToNode([..._selectedFiles], target); _selectedFiles.clear(); renderTree(); renderFiles(); renderInspector(); }
   }, { signal: sig });
+  document.getElementById('cl-sel-project')?.addEventListener('click', async () => {
+    const files = selectedFileObjects();
+    if (!files.length || !window.Pickers) return;
+    const ok = await window.Pickers.addToProject(files);
+    if (ok) { _selectedFiles.clear(); renderFiles(); renderInspector(); }
+  }, { signal: sig });
+  document.getElementById('cl-sel-transfer')?.addEventListener('click', () => {
+    const files = selectedFileObjects();
+    if (!files.length) return;
+    sendFilesToTransfer(files);
+    _selectedFiles.clear(); renderFiles(); renderInspector();
+  }, { signal: sig });
+}
+
+function selectedFileObjects() {
+  const node = byId(_selectedId);
+  if (!node) return [];
+  return (node.files || []).filter(f => _selectedFiles.has(f.path));
+}
+
+function sendFilesToTransfer(files) {
+  const items = files.map(f => ({ path: f.path, name: f.name, ext: f.ext, size: f.size, mtime: f.mtime }));
+  window.store.set('transferQueue', items);
+  if (window.router) window.router.load('transfer');
 }
 
 function nodePath(id) {
@@ -786,6 +812,8 @@ function injectCSS() {
 .cl-btn-secondary { padding:8px 12px; background:var(--panel-bg,#fff); color:var(--fg,#2a2f3a); border:1px solid var(--border,#d8dbe6); border-radius:7px; font-size:13px; font-weight:600; cursor:pointer; }
 .cl-btn-secondary:hover:not(:disabled) { background:var(--hover-bg,#eef0f6); }
 .cl-btn-secondary:disabled { opacity:.45; cursor:not-allowed; }
+.cl-btn-sec { padding:6px 12px; background:var(--panel-bg,#fff); color:var(--accent,#3a6df0); border:1px solid var(--accent,#3a6df0); border-radius:6px; font-size:12px; font-weight:600; cursor:pointer; }
+.cl-btn-sec:hover { background:var(--accent,#3a6df0); color:#fff; }
 .cl-btn-danger { padding:6px 12px; background:none; color:#d64545; border:1px solid #e6b8b8; border-radius:6px; font-size:12px; cursor:pointer; }
 .cl-btn-danger:hover { background:#fbeaea; }
 .cl-btn-link { border:none; background:none; color:#7c5cff; font-size:12.5px; cursor:pointer; text-decoration:underline; }

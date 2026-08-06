@@ -34,6 +34,7 @@ let _abortCtrl = null;
 
 // Transfer state
 let _sourceFiles = [];       // Array of {path, name, ext, format}
+let _selectedSources = new Set(); // Paths of source files included in the transfer
 let _selectedDest = null;    // Current destination {type, path, label, machine}
 let _destinations = [];      // Available destinations (drives + favorites)
 let _machineProfile = null;  // Selected machine profile
@@ -58,6 +59,25 @@ async function mount(container) {
   // Load destinations and favorites
   await refreshDestinations();
   loadFavorites();
+
+  // Consume any hand-off queue from Collections / Projects
+  consumeTransferQueue();
+}
+
+function consumeTransferQueue() {
+  const queue = window.store?.get('transferQueue') || [];
+  if (!Array.isArray(queue) || !queue.length) return;
+  for (const file of queue) {
+    if (!file || !file.path) continue;
+    if (_sourceFiles.some(f => f.path === file.path)) { _selectedSources.add(file.path); continue; }
+    const name = file.name || file.path.split(/[/\\]/).pop();
+    const ext = (file.ext || name.split('.').pop() || '').toLowerCase();
+    _sourceFiles.push({ path: file.path, name, ext, format: ext.toUpperCase(), size: file.size, mtime: file.mtime });
+    _selectedSources.add(file.path);
+  }
+  window.store?.set('transferQueue', []);
+  renderSourceList();
+  updateTransferButton();
 }
 
 function unmount() {
@@ -72,6 +92,7 @@ function unmount() {
   removeCSS();
   
   _sourceFiles = [];
+  _selectedSources = new Set();
   _selectedDest = null;
   _destinations = [];
   _machineProfile = null;
@@ -89,6 +110,10 @@ function buildHTML() {
       <h3>${t('transfer.sourceFiles')}</h3>
       <button id="tr-add-files-btn" class="tr-icon-btn" title="${t('transfer.addFiles')}">+</button>
     </div>
+    <div id="tr-source-toolbar" class="tr-source-toolbar hidden">
+      <label class="tr-selall"><input type="checkbox" id="tr-select-all" /><span>${t('transfer.selectAll')}</span></label>
+      <span id="tr-sel-count" class="tr-sel-count"></span>
+    </div>
     <div id="tr-source-list" class="tr-source-list">
       <div class="tr-empty-state">
         <p>${t('transfer.noFiles')}</p>
@@ -105,11 +130,19 @@ function buildHTML() {
     </div>
     
     <div class="tr-dest-sections">
-      <!-- Removable Drives -->
+      <!-- Removable Drives / Volumes -->
       <section class="tr-dest-section">
         <h4>${t('transfer.removableDrives')}</h4>
         <div id="tr-drives-list" class="tr-dest-list">
           <div class="tr-scanning">${t('transfer.scanning')}</div>
+        </div>
+      </section>
+
+      <!-- Network devices (UI preparation — none available yet) -->
+      <section class="tr-dest-section">
+        <h4>${t('transfer.networkDevices')}</h4>
+        <div id="tr-network-list" class="tr-dest-list">
+          <div class="tr-empty-hint">${t('transfer.noNetworkDevices')}</div>
         </div>
       </section>
       
@@ -271,6 +304,29 @@ function injectCSS() {
   flex: 1;
   padding: 12px;
 }
+.tr-source-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border, #30363d);
+}
+.tr-source-toolbar.hidden { display: none; }
+.tr-selall {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--fg, #e6edf3);
+  cursor: pointer;
+}
+.tr-sel-count {
+  font-size: 11px;
+  color: var(--muted, #8b949e);
+}
+.tr-source-check { flex-shrink: 0; cursor: pointer; }
+.tr-source-off { opacity: 0.5; }
 .tr-empty-state {
   text-align: center;
   padding: 40px 16px;
@@ -696,6 +752,7 @@ async function addSourceFiles() {
       ext,
       format: ext.toUpperCase()
     });
+    _selectedSources.add(filePath);
   }
   
   renderSourceList();
@@ -703,6 +760,8 @@ async function addSourceFiles() {
 }
 
 function removeSourceFile(index) {
+  const removed = _sourceFiles[index];
+  if (removed) _selectedSources.delete(removed.path);
   _sourceFiles.splice(index, 1);
   renderSourceList();
   updateTransferButton();
@@ -710,9 +769,11 @@ function removeSourceFile(index) {
 
 function renderSourceList() {
   const sourceList = document.getElementById('tr-source-list');
+  const toolbar = document.getElementById('tr-source-toolbar');
   if (!sourceList) return;
-  
+
   if (_sourceFiles.length === 0) {
+    if (toolbar) toolbar.classList.add('hidden');
     sourceList.innerHTML = `
       <div class="tr-empty-state">
         <p>${t('transfer.noFiles')}</p>
@@ -721,15 +782,33 @@ function renderSourceList() {
     `;
     return;
   }
-  
-  sourceList.innerHTML = _sourceFiles.map((file, idx) => `
-    <div class="tr-source-item">
+
+  if (toolbar) toolbar.classList.remove('hidden');
+
+  sourceList.innerHTML = _sourceFiles.map((file, idx) => {
+    const on = _selectedSources.has(file.path);
+    return `
+    <div class="tr-source-item ${on ? '' : 'tr-source-off'}">
+      <input type="checkbox" class="tr-source-check" data-src-index="${idx}" ${on ? 'checked' : ''} />
       <div class="tr-source-item-icon">📄</div>
       <div class="tr-source-item-name" title="${file.path}">${file.name}</div>
       <div class="tr-source-item-ext">${file.ext.toUpperCase()}</div>
       <button class="tr-source-item-remove" data-remove-index="${idx}">×</button>
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
+
+  updateSourceSelectionUI();
+}
+
+function updateSourceSelectionUI() {
+  const selCount = document.getElementById('tr-sel-count');
+  const selAll = document.getElementById('tr-select-all');
+  const n = _selectedSources.size;
+  if (selCount) selCount.textContent = t('transfer.selectedOfTotal', { n, total: _sourceFiles.length });
+  if (selAll) {
+    selAll.checked = n > 0 && n === _sourceFiles.length;
+    selAll.indeterminate = n > 0 && n < _sourceFiles.length;
+  }
 }
 
 /* ------------------------------------------------------------------ *
@@ -821,7 +900,8 @@ function updateMachineInfo() {
  *  Transfer workflow
  * ------------------------------------------------------------------ */
 async function executeTransfer() {
-  if (!_selectedDest || _sourceFiles.length === 0 || _transferInProgress) return;
+  const files = _sourceFiles.filter(f => _selectedSources.has(f.path));
+  if (!_selectedDest || files.length === 0 || _transferInProgress) return;
   
   _transferInProgress = true;
   
@@ -847,10 +927,10 @@ async function executeTransfer() {
       await window.api.ensureDir?.(destPath);
     }
     
-    const total = _sourceFiles.length;
+    const total = files.length;
     
     for (let i = 0; i < total; i++) {
-      const file = _sourceFiles[i];
+      const file = files[i];
       
       if (progressText) {
         progressText.textContent = t('transfer.progressTransfer', { current: i + 1, total, name: file.name });
@@ -919,7 +999,7 @@ function updateTransferButton() {
   const btn = document.getElementById('tr-transfer-btn');
   if (!btn) return;
   
-  btn.disabled = _sourceFiles.length === 0 || !_selectedDest || _transferInProgress;
+  btn.disabled = _selectedSources.size === 0 || !_selectedDest || _transferInProgress;
 }
 
 /* ------------------------------------------------------------------ *
@@ -938,6 +1018,7 @@ function handleGalleryHandoff(data) {
       ext: file.ext,
       format: file.ext.toUpperCase()
     });
+    _selectedSources.add(file.path);
     
     renderSourceList();
     updateTransferButton();
@@ -956,6 +1037,7 @@ function handleBatchHandoff(data) {
         ext: file.ext,
         format: file.ext.toUpperCase()
       });
+      _selectedSources.add(file.path);
     }
     
     renderSourceList();
@@ -1013,6 +1095,29 @@ function wireEvents() {
         const idx = parseInt(removeBtn.dataset.removeIndex, 10);
         removeSourceFile(idx);
       }
+    }, { signal: sig });
+
+  // Per-file source selection checkboxes
+  document.getElementById('tr-source-list')
+    ?.addEventListener('change', (e) => {
+      const cb = e.target.closest('.tr-source-check');
+      if (!cb) return;
+      const idx = parseInt(cb.dataset.srcIndex, 10);
+      const file = _sourceFiles[idx];
+      if (!file) return;
+      if (cb.checked) _selectedSources.add(file.path); else _selectedSources.delete(file.path);
+      cb.closest('.tr-source-item')?.classList.toggle('tr-source-off', !cb.checked);
+      updateSourceSelectionUI();
+      updateTransferButton();
+    }, { signal: sig });
+
+  // Select all / none
+  document.getElementById('tr-select-all')
+    ?.addEventListener('change', (e) => {
+      if (e.target.checked) _sourceFiles.forEach(f => _selectedSources.add(f.path));
+      else _selectedSources.clear();
+      renderSourceList();
+      updateTransferButton();
     }, { signal: sig });
   
   document.getElementById('tr-drives-list')

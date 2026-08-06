@@ -537,7 +537,19 @@ function renderInspectorHTML() {
     <div class="pv-insp-section">
       <h4>${esc(t('projects.tags'))}</h4>
       <input id="pv-tags" type="text" class="pv-tags-input" placeholder="${esc(t('projects.tagsPlaceholder'))}" value="${esc((asset.tags || []).join(', '))}" />
+    </div>
+    <div class="pv-insp-section">
+      <button id="pv-send-transfer" class="pv-btn-secondary" data-id="${esc(asset.id)}">${esc(t('pick.sendToTransfer'))}</button>
     </div>`;
+}
+
+function sendAssetToTransfer(assetId) {
+  const asset = findAsset(assetId);
+  if (!asset) return;
+  const name = asset.name || (asset.path || '').split(/[/\\]/).pop();
+  const ext = (name.split('.').pop() || '').toLowerCase();
+  window.store.set('transferQueue', [{ path: asset.path, name, ext, size: asset.size, mtime: asset.mtime }]);
+  if (window.router) window.router.load('transfer');
 }
 
 function saveInspectorFields() {
@@ -592,6 +604,9 @@ function wireEvents() {
     }
     const removeAssetBtn = e.target.closest('.pv-remove-asset');
     if (removeAssetBtn) { e.stopPropagation(); if (confirm(t('projects.confirmRemoveAsset'))) removeAsset(removeAssetBtn.dataset.id); return; }
+
+    const sendTransferBtn = e.target.closest('#pv-send-transfer');
+    if (sendTransferBtn) { e.stopPropagation(); sendAssetToTransfer(sendTransferBtn.dataset.id); return; }
 
     // --- catalog: toolbar ---
     if (e.target.closest('#pv-new-project')) { createProject(); return; }
@@ -683,6 +698,8 @@ function injectCSS() {
     .pv-btn-primary:hover { background: var(--accent-hover, #1565c0); }
     .pv-btn-ghost { background: var(--input-bg, #fff); color: var(--fg, #333); border: 1px solid var(--row-border, #ddd); padding: 8px 12px; border-radius: 6px; font-size: 13px; cursor: pointer; }
     .pv-btn-ghost:hover { background: var(--hover-bg, #f3f3f3); }
+    .pv-btn-secondary { width: 100%; background: var(--input-bg, #fff); color: var(--accent, #1976d2); border: 1px solid var(--accent, #1976d2); padding: 8px 12px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
+    .pv-btn-secondary:hover { background: var(--accent, #1976d2); color: #fff; }
 
     .pv-cat-body { flex: 1; overflow-y: auto; padding: 20px; }
     .pv-cat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; }

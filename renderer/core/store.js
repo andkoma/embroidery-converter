@@ -153,6 +153,10 @@ const initialState = {
   // Collections view. Each entry: { path, name, ext }.
   collectionsQueue: [],
 
+  // Transfer hand-off queue — files sent from Collections/Projects to the
+  // Transfer view as transfer sources. Each entry: { path, name, ext, size, mtime }.
+  transferQueue: [],
+
   // Preview cache (path → preview data)
   previewCache: new Map(),
 
