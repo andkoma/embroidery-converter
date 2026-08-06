@@ -409,7 +409,7 @@ function renderFiles() {
   if (titleEl) titleEl.textContent = node.name;
   if (countEl) countEl.textContent = t('collections.filesCount', { n: node.files.length });
   if (addBtn) addBtn.disabled = false;
-  if (aiBtn) aiBtn.disabled = node.files.length === 0;
+  if (aiBtn) aiBtn.disabled = node.files.length === 0 || !resolveVisionProvider();
 
   renderTagChips();
   renderSelBar();
@@ -621,12 +621,30 @@ function showQueueBanner(files) {
 /* ------------------------------------------------------------------ *
  *  AI classification (vision model on thumbnails)
  * ------------------------------------------------------------------ */
-async function classifyWithAI() {
+/**
+ * Resolve the AI provider that should perform vision classification.
+ * Requires: AI enabled globally, the active provider enabled, vision capability
+ * on, and the autoClassify allowance granted. Returns null when unusable.
+ */
+function resolveVisionProvider() {
   const ai = window.store?.get('settings.ai') || {};
-  if (!ai.enabled) {
+  if (!ai.enabled || !Array.isArray(ai.providers) || !ai.providers.length) return null;
+  let p = ai.providers.find(x => x.id === ai.activeProviderId);
+  if (!p) p = ai.providers.find(x => x.enabled !== false) || ai.providers[0];
+  if (!p) return null;
+  if (p.enabled === false) return null;
+  if (p.capabilities && p.capabilities.vision === false) return null;
+  if (p.allow && p.allow.autoClassify === false) return null;
+  return { ai, provider: p };
+}
+
+async function classifyWithAI() {
+  const resolved = resolveVisionProvider();
+  if (!resolved) {
     alert(t('collections.aiDisabled'));
     return;
   }
+  const { ai, provider } = resolved;
   const node = byId(_selectedId);
   if (!node || !node.files.length) return;
 
@@ -667,7 +685,7 @@ async function classifyWithAI() {
   const categories = _nodes.map(n => n.name).filter((v, i, a) => a.indexOf(v) === i);
 
   try {
-    const r = await window.api.aiClassify({ items, categories, autoTag: ai.autoTag !== false });
+    const r = await window.api.aiClassify({ items, categories, autoTag: ai.autoTag !== false, providerId: provider.id });
     if (!r || !r.ok) throw new Error(r && r.error ? r.error : 'unknown');
     // Apply results
     const map = new Map(node.files.map(f => [f.path, f]));

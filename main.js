@@ -5,7 +5,7 @@
  */
 'use strict';
 
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, safeStorage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -273,6 +273,42 @@ function runBackendStream(requestId, subcommand, payload) {
  *  sync to and from this file.
  * ------------------------------------------------------------------ */
 
+/**
+ * Metadata for each provider kind. Drives both the defaults applied when a
+ * provider is created and the secret-requirement policy:
+ *   requiresKey  — a key is mandatory (hosted OpenAI)
+ *   canHaveKey   — a key is accepted but optional (custom OpenAI-compatible)
+ *   external     — requests leave the local machine (privacy-relevant)
+ * Local kinds (ollama, lmstudio) never require or send a key, so the UI hides
+ * the secret field entirely to avoid confusing servers that reject auth.
+ */
+const PROVIDER_KINDS = {
+  'openai': {
+    label: 'OpenAI',
+    defaultBaseUrl: 'https://api.openai.com/v1',
+    defaultModel: 'gpt-4o-mini',
+    requiresKey: true, canHaveKey: true, external: true,
+  },
+  'openai-compatible': {
+    label: 'OpenAI-compatible',
+    defaultBaseUrl: '',
+    defaultModel: '',
+    requiresKey: false, canHaveKey: true, external: true,
+  },
+  'ollama': {
+    label: 'Ollama (local)',
+    defaultBaseUrl: 'http://localhost:11434',
+    defaultModel: 'llava',
+    requiresKey: false, canHaveKey: false, external: false,
+  },
+  'lmstudio': {
+    label: 'LM Studio (local)',
+    defaultBaseUrl: 'http://localhost:1234/v1',
+    defaultModel: 'local-model',
+    requiresKey: false, canHaveKey: false, external: false,
+  },
+};
+
 const SETTINGS_DEFAULTS = {
   language: 'en',
   theme: 'light',
@@ -293,13 +329,18 @@ const SETTINGS_DEFAULTS = {
     colorLimit: null,          // null = no limit
     onConflict: 'suffix',      // suffix | overwrite | skip
   },
+  // AI vision configuration. Secrets (API keys) are NOT stored here — they
+  // live in the encrypted secrets store and are referenced by `secretRef`.
   ai: {
     enabled: false,
-    provider: 'openai',        // openai | openai-compatible | ollama
-    endpoint: '',              // base URL for openai-compatible / ollama (blank = provider default)
-    apiKey: '',
-    model: 'gpt-4o-mini',
     autoTag: true,             // suggest tags in addition to a category
+    activeProviderId: null,    // which provider Collections uses by default
+    // Registry of configured providers. A provider only carries a secretRef
+    // when its kind actually requires a key (see PROVIDER_KINDS).
+    providers: [],             // { id, name, kind, baseUrl, model, requiresKey,
+                               //   secretRef, enabled,
+                               //   capabilities:{vision,chat,embeddings},
+                               //   allow:{autoClassify,sendExternal} }
   },
   // Collections tree — flat array of nodes with parentId (null = root).
   // node: { id, name, parentId, files: [{path,name,ext}], tags: [], createdAt }
@@ -324,7 +365,50 @@ function loadSettings() {
     // File doesn't exist yet or is corrupt — start fresh.
     _settingsCache = JSON.parse(JSON.stringify(SETTINGS_DEFAULTS));
   }
+  migrateAiSettings(_settingsCache);
   return _settingsCache;
+}
+
+/**
+ * Migrate the legacy single-provider `ai` shape
+ * ({provider, endpoint, apiKey, model}) into the provider registry.
+ * Runs once — subsequent loads see `providers` already populated.
+ * Any legacy plaintext apiKey is moved into the encrypted secrets store.
+ */
+function migrateAiSettings(s) {
+  if (!s || !s.ai) return;
+  const ai = s.ai;
+  if (Array.isArray(ai.providers) && (ai.providers.length || ai._migrated)) return;
+  if (!Array.isArray(ai.providers)) ai.providers = [];
+
+  const legacyKind = ai.provider;         // may be undefined on fresh installs
+  if (legacyKind) {
+    const kind = ['openai', 'openai-compatible', 'ollama', 'lmstudio'].includes(legacyKind)
+      ? legacyKind : 'openai';
+    const meta = PROVIDER_KINDS[kind];
+    const id = 'p_' + crypto.randomBytes(5).toString('hex');
+    let secretRef = '';
+    if (ai.apiKey && meta.canHaveKey) {
+      secretRef = 'ai_' + id;
+      try { setSecretValue(secretRef, ai.apiKey); } catch (_) {}
+    }
+    ai.providers.push({
+      id,
+      name: meta.label,
+      kind,
+      baseUrl: ai.endpoint || meta.defaultBaseUrl,
+      model: ai.model || meta.defaultModel,
+      requiresKey: kind === 'openai-compatible' ? !!ai.apiKey : meta.requiresKey,
+      secretRef,
+      enabled: true,
+      capabilities: { vision: true, chat: true, embeddings: false },
+      allow: { autoClassify: true, sendExternal: meta.external },
+    });
+    if (ai.activeProviderId == null) ai.activeProviderId = id;
+  }
+  // Drop legacy scalar fields so they never leak plaintext again.
+  delete ai.provider; delete ai.endpoint; delete ai.apiKey; delete ai.model;
+  ai._migrated = true;
 }
 
 function saveSettings(settings) {
@@ -691,14 +775,109 @@ ipcMain.handle('settings:set', async (_e, patch) => {
 });
 
 /* ------------------------------------------------------------------ *
+ *  Encrypted secrets store
+ *
+ *  API keys and other credentials are NEVER kept in settings.json. They live
+ *  in userData/secrets.enc, encrypted with Electron's safeStorage which is
+ *  backed by the OS keychain (macOS Keychain / Windows DPAPI / Linux libsecret).
+ *  Settings only reference a secret by `secretRef`; the plaintext value is
+ *  resolved here in the main process and is never returned to the renderer —
+ *  the renderer only ever sees { isSet, last4, protected }.
+ *
+ *  If the OS has no keyring available (some headless Linux setups), we fall
+ *  back to a base64-obfuscated value flagged `protected:false` so the UI can
+ *  warn the user it is not hardware-protected.
+ * ------------------------------------------------------------------ */
+
+let _secretsCache = null;
+
+function secretsPath() {
+  return path.join(app.getPath('userData'), 'secrets.enc');
+}
+
+function encryptionAvailable() {
+  try { return safeStorage && safeStorage.isEncryptionAvailable(); } catch (_) { return false; }
+}
+
+function loadSecrets() {
+  if (_secretsCache) return _secretsCache;
+  try {
+    _secretsCache = JSON.parse(fs.readFileSync(secretsPath(), 'utf8'));
+  } catch (_) {
+    _secretsCache = {};
+  }
+  return _secretsCache;
+}
+
+function saveSecrets(map) {
+  _secretsCache = map;
+  try {
+    fs.mkdirSync(path.dirname(secretsPath()), { recursive: true });
+    fs.writeFileSync(secretsPath(), JSON.stringify(map), { encoding: 'utf8', mode: 0o600 });
+  } catch (e) {
+    console.error('Failed to save secrets:', e.message);
+  }
+}
+
+/** Store a plaintext secret under `ref`. Returns its public status. */
+function setSecretValue(ref, plain) {
+  if (!ref) throw new Error('missing secret ref');
+  const map = loadSecrets();
+  const value = String(plain == null ? '' : plain);
+  const last4 = value.slice(-4);
+  if (encryptionAvailable()) {
+    const buf = safeStorage.encryptString(value);
+    map[ref] = { v: buf.toString('base64'), last4, protected: true };
+  } else {
+    map[ref] = { v: Buffer.from(value, 'utf8').toString('base64'), last4, protected: false };
+  }
+  saveSecrets(map);
+  return { isSet: !!value, last4, protected: map[ref].protected };
+}
+
+/** Resolve the plaintext secret for `ref` (main-process only). */
+function getSecretValue(ref) {
+  if (!ref) return '';
+  const rec = loadSecrets()[ref];
+  if (!rec || !rec.v) return '';
+  try {
+    if (rec.protected) return safeStorage.decryptString(Buffer.from(rec.v, 'base64'));
+    return Buffer.from(rec.v, 'base64').toString('utf8');
+  } catch (_) { return ''; }
+}
+
+function deleteSecretValue(ref) {
+  const map = loadSecrets();
+  if (ref in map) { delete map[ref]; saveSecrets(map); }
+}
+
+function secretStatus(ref) {
+  const rec = ref ? loadSecrets()[ref] : null;
+  return rec
+    ? { isSet: true, last4: rec.last4 || '', protected: !!rec.protected }
+    : { isSet: false, last4: '', protected: encryptionAvailable() };
+}
+
+ipcMain.handle('secrets:available', async () => ({ available: encryptionAvailable() }));
+ipcMain.handle('secrets:status', async (_e, { ref } = {}) => secretStatus(ref));
+ipcMain.handle('secrets:set', async (_e, { ref, value } = {}) => {
+  if (!ref) return { isSet: false, error: 'missing ref' };
+  try { return setSecretValue(ref, value); }
+  catch (e) { return { isSet: false, error: e.message || String(e) }; }
+});
+ipcMain.handle('secrets:delete', async (_e, { ref } = {}) => {
+  deleteSecretValue(ref);
+  return { isSet: false };
+});
+
+/* ------------------------------------------------------------------ *
  *  AI vision IPC (auto-classification & tagging for Collections)
  *
- *  Supports three provider modes, all configured in Settings → AI & Vision:
- *    - openai            : the hosted OpenAI API (api.openai.com)
- *    - openai-compatible : any server exposing /chat/completions (LM Studio,
- *                          vLLM, LocalAI, OpenRouter, …) at a custom endpoint
- *    - ollama            : a local Ollama daemon (/api/chat) for full offline
- *                          privacy — thumbnails never leave the machine
+ *  Providers are configured in Settings → AI & Vision as a registry. Each
+ *  provider has a kind (see PROVIDER_KINDS), a base URL, a model, capability
+ *  flags (vision/chat/embeddings) and functional allowances (autoClassify,
+ *  sendExternal). Secrets are pulled from the encrypted store by secretRef and
+ *  only attached for provider kinds that actually use a key.
  *  Uses the global fetch bundled with Electron's Node (>=18). No extra deps.
  * ------------------------------------------------------------------ */
 
@@ -707,13 +886,21 @@ function aiConfig() {
   return (s && s.ai) ? s.ai : {};
 }
 
-/** Resolve the base URL for the configured provider. */
-function aiBaseUrl(cfg) {
-  const provider = cfg.provider || 'openai';
-  const custom = (cfg.endpoint || '').trim().replace(/\/+$/, '');
-  if (provider === 'openai') return 'https://api.openai.com/v1';
-  if (provider === 'ollama') return custom || 'http://localhost:11434';
-  return custom; // openai-compatible — required
+/** Find a provider by id, falling back to the active provider. */
+function resolveProvider(ai, providerId) {
+  const providers = Array.isArray(ai.providers) ? ai.providers : [];
+  let p = null;
+  if (providerId) p = providers.find((x) => x.id === providerId);
+  if (!p && ai.activeProviderId) p = providers.find((x) => x.id === ai.activeProviderId);
+  if (!p) p = providers.find((x) => x.enabled) || providers[0];
+  return p || null;
+}
+
+/** Resolve the base URL for a provider (custom value or kind default). */
+function providerBaseUrl(p) {
+  const meta = PROVIDER_KINDS[p.kind] || {};
+  const custom = (p.baseUrl || '').trim().replace(/\/+$/, '');
+  return custom || meta.defaultBaseUrl || '';
 }
 
 /** Split a data URL into { mime, base64 }. Accepts raw base64 too. */
@@ -723,18 +910,19 @@ function splitDataUrl(dataUrl) {
   return { mime: 'image/png', base64: (dataUrl || '').replace(/^data:.*?,/, '') };
 }
 
-/** Call an OpenAI-style /chat/completions endpoint with an image. */
-async function aiChatOpenAI(cfg, base, promptText, dataUrl) {
+/** Call an OpenAI-style /chat/completions endpoint with an optional image. */
+async function aiChatOpenAI(p, base, apiKey, promptText, dataUrl) {
   const url = base.replace(/\/+$/, '') + '/chat/completions';
   const content = [{ type: 'text', text: promptText }];
   if (dataUrl) content.push({ type: 'image_url', image_url: { url: dataUrl } });
   const headers = { 'Content-Type': 'application/json' };
-  if (cfg.apiKey) headers['Authorization'] = 'Bearer ' + cfg.apiKey;
+  // Only send auth when the provider kind uses a key AND one is configured.
+  if (apiKey) headers['Authorization'] = 'Bearer ' + apiKey;
   const res = await fetch(url, {
     method: 'POST',
     headers,
     body: JSON.stringify({
-      model: cfg.model,
+      model: p.model,
       messages: [{ role: 'user', content }],
       max_tokens: 300,
       temperature: 0,
@@ -748,8 +936,8 @@ async function aiChatOpenAI(cfg, base, promptText, dataUrl) {
   return (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '';
 }
 
-/** Call a local Ollama /api/chat endpoint with an image. */
-async function aiChatOllama(cfg, base, promptText, dataUrl) {
+/** Call a local Ollama /api/chat endpoint with an optional image. */
+async function aiChatOllama(p, base, promptText, dataUrl) {
   const url = base.replace(/\/+$/, '') + '/api/chat';
   const msg = { role: 'user', content: promptText };
   if (dataUrl) msg.images = [splitDataUrl(dataUrl).base64];
@@ -757,7 +945,7 @@ async function aiChatOllama(cfg, base, promptText, dataUrl) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: cfg.model,
+      model: p.model,
       messages: [msg],
       stream: false,
       options: { temperature: 0 },
@@ -771,15 +959,19 @@ async function aiChatOllama(cfg, base, promptText, dataUrl) {
   return (data.message && data.message.content) || '';
 }
 
-/** Dispatch a single vision request to the configured provider. */
-async function aiVisionCall(cfg, promptText, dataUrl) {
-  const base = aiBaseUrl(cfg);
-  if (!base) throw new Error('No endpoint configured for the selected provider.');
-  if (!cfg.model) throw new Error('No model configured.');
-  if ((cfg.provider || 'openai') === 'ollama') {
-    return aiChatOllama(cfg, base, promptText, dataUrl);
-  }
-  return aiChatOpenAI(cfg, base, promptText, dataUrl);
+/** Dispatch a single vision request to a provider. */
+async function aiVisionCall(p, promptText, dataUrl) {
+  const meta = PROVIDER_KINDS[p.kind] || {};
+  const base = providerBaseUrl(p);
+  if (!base) throw new Error('No endpoint configured for this provider.');
+  if (!p.model) throw new Error('No model configured.');
+  // Resolve the key only for kinds that accept one.
+  let apiKey = '';
+  if (meta.canHaveKey && p.secretRef) apiKey = getSecretValue(p.secretRef);
+  if (meta.requiresKey && !apiKey) throw new Error('This provider requires an API key.');
+  if (p.kind === 'ollama') return aiChatOllama(p, base, promptText, dataUrl);
+  // openai, openai-compatible and lmstudio all speak the OpenAI chat API.
+  return aiChatOpenAI(p, base, apiKey, promptText, dataUrl);
 }
 
 /** Best-effort parse of a JSON object from a model response. */
@@ -795,12 +987,14 @@ function parseAiJson(text) {
   return null;
 }
 
-/** Probe the configured provider with a tiny text request. */
-ipcMain.handle('ai:test', async () => {
-  const cfg = aiConfig();
-  if (!cfg.enabled) return { ok: false, error: 'AI features are disabled.' };
+/** Probe a provider with a tiny text request. payload: { providerId? } */
+ipcMain.handle('ai:test', async (_e, payload = {}) => {
+  const ai = aiConfig();
+  if (!ai.enabled) return { ok: false, error: 'AI features are disabled.' };
+  const p = resolveProvider(ai, payload && payload.providerId);
+  if (!p) return { ok: false, error: 'No provider configured.' };
   try {
-    const out = await aiVisionCall(cfg, 'Reply with the single word: ok', null);
+    const out = await aiVisionCall(p, 'Reply with the single word: ok', null);
     return { ok: true, sample: String(out || '').slice(0, 120) };
   } catch (e) {
     return { ok: false, error: e.message || String(e) };
@@ -809,12 +1003,22 @@ ipcMain.handle('ai:test', async () => {
 
 /**
  * Classify & tag a batch of design thumbnails.
- * payload: { items: [{ id, image(dataURL) }], categories: string[], autoTag: bool }
- * returns: { ok, results: [{ id, category, tags }], error? }
+ * payload: { items:[{id,image(dataURL)}], categories:string[], autoTag:bool, providerId? }
+ * returns: { ok, results:[{id,category,tags}], error? }
  */
 ipcMain.handle('ai:classify', async (_e, payload) => {
-  const cfg = aiConfig();
-  if (!cfg.enabled) return { ok: false, error: 'AI features are disabled.' };
+  const ai = aiConfig();
+  if (!ai.enabled) return { ok: false, error: 'AI features are disabled.' };
+  const p = resolveProvider(ai, payload && payload.providerId);
+  if (!p) return { ok: false, error: 'No provider configured.' };
+  if (!p.enabled) return { ok: false, error: 'Selected provider is disabled.' };
+  if (p.capabilities && p.capabilities.vision === false) {
+    return { ok: false, error: 'Selected provider is not allowed to process images (vision capability off).' };
+  }
+  if (p.allow && p.allow.autoClassify === false) {
+    return { ok: false, error: 'Auto-classification is not permitted for this provider.' };
+  }
+
   const items = (payload && Array.isArray(payload.items)) ? payload.items : [];
   const categories = (payload && Array.isArray(payload.categories) && payload.categories.length)
     ? payload.categories
@@ -841,7 +1045,7 @@ ipcMain.handle('ai:classify', async (_e, payload) => {
       continue;
     }
     try {
-      const raw = await aiVisionCall(cfg, prompt, it.image);
+      const raw = await aiVisionCall(p, prompt, it.image);
       const parsed = parseAiJson(raw) || {};
       let category = typeof parsed.category === 'string' ? parsed.category.trim() : '';
       // Snap to a known category (case-insensitive) when possible.

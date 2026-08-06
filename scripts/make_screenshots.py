@@ -94,8 +94,23 @@ def init_script(data):
     transfer: { favoriteDestinations: [{ label: 'Brother USB', path: '/Volumes/BROTHER' }] },
     transferFavorites: [{ label: 'Brother USB', path: '/Volumes/BROTHER' }],
     defaultMachine: 'brother',
-    ai: { enabled: true, provider: 'ollama', endpoint: 'http://localhost:11434',
-          apiKey: '', model: 'llava', autoTag: true },
+    ai: {
+      enabled: true,
+      autoTag: true,
+      activeProviderId: 'prov-ollama',
+      providers: [
+        { id: 'prov-ollama', name: 'Ollama (local)', kind: 'ollama',
+          baseUrl: 'http://localhost:11434', model: 'llava',
+          requiresKey: false, secretRef: 'ai.provider.prov-ollama', enabled: true,
+          capabilities: { vision: true, chat: true, embeddings: false },
+          allow: { autoClassify: true, sendExternal: true } },
+        { id: 'prov-openai', name: 'OpenAI', kind: 'openai',
+          baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini',
+          requiresKey: true, secretRef: 'ai.provider.prov-openai', enabled: false,
+          capabilities: { vision: true, chat: true, embeddings: false },
+          allow: { autoClassify: true, sendExternal: false } },
+      ],
+    },
     collections: [
       { id: 'c-nature', name: 'Nature Designs', parentId: null, tags: [], createdAt: now,
         files: [ fileObj(D.files[0], { category: 'Flowers', tags: ['floral','tulip'] }) ] },
@@ -149,7 +164,13 @@ def init_script(data):
       return 'thumb-cached-req';
     },
     getAppVersion: async () => '2.0.0',
-    aiTest:        async () => ({ ok: true, sample: 'ok' }),
+    aiTest:        async (providerId) => ({ ok: true, sample: 'ok' }),
+    secretsAvailable: async () => ({ available: true }),
+    secretsStatus: async (ref) => (ref === 'ai.provider.prov-openai'
+                     ? { isSet: true, last4: 'AB12', protected: true }
+                     : { isSet: false, last4: '', protected: true }),
+    secretsSet:    async (ref, value) => ({ ok: true }),
+    secretsDelete: async (ref) => ({ ok: true }),
     aiClassify:    async ({ items }) => ({
       ok: true,
       results: (items || []).map((it, i) => ({
@@ -295,6 +316,12 @@ def main():
             page.wait_for_timeout(500)
         except Exception as e:
             print("settings topic select skipped:", e)
+        # Expand the OpenAI provider so the secret / capability / allowance UI shows.
+        try:
+            page.click('[data-edit="prov-openai"]', timeout=2500)
+            page.wait_for_timeout(600)
+        except Exception as e:
+            print("settings provider edit skipped:", e)
         shoot(page, "07-settings.png")
 
         browser.close()

@@ -152,15 +152,29 @@ contextBridge.exposeInMainWorld('api', {
   /* ---------------------------------------------------------------- *
    *  AI / vision (classification of design thumbnails)
    * ---------------------------------------------------------------- */
-  /** Validate the configured AI provider/model with a tiny probe request. */
-  aiTest: ()            => ipcRenderer.invoke('ai:test'),
+  /** Validate a configured AI provider/model with a tiny probe request. */
+  aiTest: (providerId)  => ipcRenderer.invoke('ai:test', { providerId }),
   /**
    * Classify one or more design images.
-   * @param {{ items: {id:string, image:string}[], categories?: string[], autoTag?: boolean }} payload
+   * @param {{ items: {id:string, image:string}[], categories?: string[], autoTag?: boolean, providerId?: string }} payload
    *        image = data URL (data:image/png;base64,...)
    * @returns {Promise<{ok:boolean, results?:{id,category,tags}[], error?:string}>}
    */
   aiClassify: (payload) => ipcRenderer.invoke('ai:classify', payload),
+
+  /* ---------------------------------------------------------------- *
+   *  Encrypted secrets store (API tokens / credentials)
+   *  Plaintext secrets NEVER cross back to the renderer — only status
+   *  ({isSet,last4,protected}) is exposed.
+   * ---------------------------------------------------------------- */
+  /** @returns {Promise<{available:boolean}>} whether OS-level encryption is active */
+  secretsAvailable: ()       => ipcRenderer.invoke('secrets:available'),
+  /** @returns {Promise<{isSet:boolean,last4:string,protected:boolean}>} */
+  secretsStatus:    (ref)    => ipcRenderer.invoke('secrets:status', { ref }),
+  /** Store/replace a secret value under the given ref. */
+  secretsSet:       (ref, value) => ipcRenderer.invoke('secrets:set', { ref, value }),
+  /** Delete a stored secret. */
+  secretsDelete:    (ref)    => ipcRenderer.invoke('secrets:delete', { ref }),
 
   /* ---------------------------------------------------------------- *
    *  Dialogs & filesystem

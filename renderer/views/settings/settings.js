@@ -38,6 +38,20 @@ let _settings = null;      // working copy of full settings object
 let _activeTopic = 'general';
 let _formats = [];         // available output formats
 let _appVersion = '';      // packaged app version
+let _editingProviderId = null; // provider card currently expanded for editing
+
+/* ------------------------------------------------------------------ *
+ *  AI provider kinds — mirrors PROVIDER_KINDS in main.js.
+ *  canHaveKey=false  → local runtime, NEVER shows or stores a secret.
+ *  requiresKey=true  → a secret MUST be set for the provider to work.
+ *  external=true     → traffic leaves the machine (privacy-relevant).
+ * ------------------------------------------------------------------ */
+const PROVIDER_KINDS = {
+  'openai':            { label: 'OpenAI',              requiresKey: true,  canHaveKey: true,  external: true,  defaultBaseUrl: 'https://api.openai.com/v1', defaultModel: 'gpt-4o-mini' },
+  'openai-compatible': { label: 'OpenAI-compatible',   requiresKey: false, canHaveKey: true,  external: true,  defaultBaseUrl: '',                          defaultModel: '' },
+  'ollama':            { label: 'Ollama (local)',      requiresKey: false, canHaveKey: false, external: false, defaultBaseUrl: 'http://localhost:11434',    defaultModel: 'llava' },
+  'lmstudio':          { label: 'LM Studio (local)',   requiresKey: false, canHaveKey: false, external: false, defaultBaseUrl: 'http://localhost:1234/v1',  defaultModel: 'local-model' },
+};
 
 const TOPICS = [
   { id: 'general',    key: 'settings.topic.general',    icon: '⚙️' },
@@ -91,7 +105,11 @@ function normalize(s) {
   s.gallery    = s.gallery    || {};
   s.transfer   = s.transfer   || {};
   s.conversion = s.conversion || { defaultFormat: 'dst', resample: false, colorLimit: null, onConflict: 'suffix' };
-  s.ai         = s.ai         || { enabled: false, provider: 'openai', endpoint: '', apiKey: '', model: 'gpt-4o-mini', autoTag: true };
+  s.ai = s.ai || {};
+  if (typeof s.ai.enabled !== 'boolean') s.ai.enabled = false;
+  if (typeof s.ai.autoTag !== 'boolean') s.ai.autoTag = true;
+  if (!Array.isArray(s.ai.providers)) s.ai.providers = [];
+  if (!('activeProviderId' in s.ai)) s.ai.activeProviderId = null;
   s.managedFolders = Array.isArray(s.managedFolders) ? s.managedFolders : [];
   s.transferFavorites = Array.isArray(s.transferFavorites) ? s.transferFavorites : [];
   return s;
@@ -419,91 +437,281 @@ function wireTransfer() {
  * ================================================================== */
 function tplAI() {
   const a = _settings.ai;
+  const providers = a.providers || [];
+  const list = providers.length
+    ? providers.map(p => providerCard(p)).join('')
+    : `<div class="st-empty">${esc(t('settings.ai.noProviders'))}</div>`;
+  const kindOptions = Object.entries(PROVIDER_KINDS)
+    .map(([k, m]) => `<option value="${k}">${esc(m.label)}</option>`).join('');
   return section(t('settings.topic.ai'), t('settings.ai.desc'), `
     <label class="st-inline-check">
       <input type="checkbox" id="st-ai-enabled" ${a.enabled ? 'checked' : ''}/>
       <span>${esc(t('settings.ai.enable'))}</span>
     </label>
     <div class="st-ai-fields" style="${a.enabled ? '' : 'opacity:.5;pointer-events:none'}">
-      <label class="st-field">
-        <span class="st-field-label">${esc(t('settings.ai.provider'))}</span>
-        <select id="st-ai-provider" class="st-input">
-          <option value="openai" ${a.provider === 'openai' ? 'selected' : ''}>OpenAI</option>
-          <option value="openai-compatible" ${a.provider === 'openai-compatible' ? 'selected' : ''}>OpenAI-compatible</option>
-          <option value="ollama" ${a.provider === 'ollama' ? 'selected' : ''}>Ollama (local)</option>
-        </select>
-      </label>
-      <label class="st-field" id="st-ai-endpoint-field" style="${a.provider === 'openai' ? 'display:none' : ''}">
-        <span class="st-field-label">${esc(t('settings.ai.endpoint'))}</span>
-        <input type="text" id="st-ai-endpoint" class="st-input"
-               placeholder="${a.provider === 'ollama' ? 'http://localhost:11434' : 'https://api.example.com/v1'}"
-               value="${esc(a.endpoint || '')}"/>
-      </label>
-      <label class="st-field" id="st-ai-key-field" style="${a.provider === 'ollama' ? 'display:none' : ''}">
-        <span class="st-field-label">${esc(t('settings.ai.apiKey'))}</span>
-        <input type="password" id="st-ai-key" class="st-input" autocomplete="off"
-               placeholder="sk-…" value="${esc(a.apiKey || '')}"/>
-        <span class="st-field-hint">${esc(t('settings.ai.apiKeyHint'))}</span>
-      </label>
-      <label class="st-field">
-        <span class="st-field-label">${esc(t('settings.ai.model'))}</span>
-        <input type="text" id="st-ai-model" class="st-input"
-               placeholder="gpt-4o-mini / llava" value="${esc(a.model || '')}"/>
-        <span class="st-field-hint">${esc(t('settings.ai.modelHint'))}</span>
-      </label>
+      <div class="st-subhead-plain">${esc(t('settings.ai.providers'))}</div>
+      <div class="st-prov-list">${list}</div>
+      <div class="st-prov-add">
+        <select id="st-prov-kind" class="st-input">${kindOptions}</select>
+        <button id="st-prov-add" class="st-btn-secondary">${esc(t('settings.ai.addProvider'))}</button>
+      </div>
       <label class="st-inline-check">
         <input type="checkbox" id="st-ai-autotag" ${a.autoTag ? 'checked' : ''}/>
         <span>${esc(t('settings.ai.autoTag'))}</span>
       </label>
-      <div class="st-ai-test-row">
-        <button id="st-ai-test" class="st-btn-secondary">${esc(t('settings.ai.test'))}</button>
-        <span id="st-ai-test-result" class="st-ai-test-result"></span>
-      </div>
     </div>
     <p class="st-ai-note">${esc(t('settings.ai.note'))}</p>
   `);
 }
 
+function providerCard(p) {
+  const meta = PROVIDER_KINDS[p.kind] || {};
+  const a = _settings.ai;
+  const isActive = a.activeProviderId === p.id;
+  const editing = _editingProviderId === p.id;
+  const head = `
+    <div class="st-prov-row">
+      <label class="st-prov-active" title="${esc(t('settings.ai.setActive'))}">
+        <input type="radio" name="st-prov-active" ${isActive ? 'checked' : ''} data-active="${esc(p.id)}"/>
+      </label>
+      <div class="st-prov-main">
+        <div class="st-prov-name">${esc(p.name || meta.label || p.kind)}</div>
+        <div class="st-prov-meta">
+          <span class="st-prov-badge">${esc(meta.label || p.kind)}</span>
+          ${meta.external
+            ? `<span class="st-prov-badge ext">${esc(t('settings.ai.external'))}</span>`
+            : `<span class="st-prov-badge local">${esc(t('settings.ai.local'))}</span>`}
+          ${p.baseUrl ? `<span class="st-prov-url">${esc(p.baseUrl)}</span>` : ''}
+        </div>
+      </div>
+      <label class="st-inline-check st-prov-en">
+        <input type="checkbox" data-enable="${esc(p.id)}" ${p.enabled !== false ? 'checked' : ''}/>
+        <span>${esc(t('settings.ai.enabledProv'))}</span>
+      </label>
+      <button class="st-btn-secondary st-prov-edit" data-edit="${esc(p.id)}">${esc(editing ? t('settings.ai.done') : t('settings.ai.edit'))}</button>
+      <button class="st-btn-danger" data-remove="${esc(p.id)}">${esc(t('settings.ai.remove'))}</button>
+    </div>`;
+  const body = editing ? providerEditForm(p, meta) : '';
+  return `<div class="st-prov-card ${isActive ? 'active' : ''}">${head}${body}</div>`;
+}
+
+function providerEditForm(p, meta) {
+  const caps = p.capabilities || {};
+  const allow = p.allow || {};
+  const secretField = meta.canHaveKey ? `
+      <div class="st-field">
+        <span class="st-field-label">${esc(t('settings.ai.secret'))}${meta.requiresKey ? ' *' : ''}</span>
+        <div class="st-secret-row">
+          <span id="st-secret-status-${esc(p.id)}" class="st-secret-status">${esc(t('settings.ai.secretChecking'))}</span>
+        </div>
+        <div class="st-secret-row">
+          <input type="password" class="st-input st-secret-input" id="st-secret-input-${esc(p.id)}" autocomplete="off"
+                 placeholder="${esc(meta.requiresKey ? 'sk-…' : t('settings.ai.secretOptional'))}"/>
+          <button class="st-btn-secondary" data-secret-set="${esc(p.id)}">${esc(t('settings.ai.secretSave'))}</button>
+          <button class="st-btn-danger" data-secret-del="${esc(p.id)}">${esc(t('settings.ai.secretRemove'))}</button>
+        </div>
+        <span class="st-field-hint">${esc(t('settings.ai.secretHint'))}</span>
+      </div>`
+    : `<div class="st-field"><span class="st-field-hint">🔒 ${esc(t('settings.ai.secretNotRequired'))}</span></div>`;
+  return `
+    <div class="st-prov-form">
+      <label class="st-field">
+        <span class="st-field-label">${esc(t('settings.ai.name'))}</span>
+        <input type="text" class="st-input" data-field="name" data-pid="${esc(p.id)}" value="${esc(p.name || '')}"/>
+      </label>
+      <label class="st-field">
+        <span class="st-field-label">${esc(t('settings.ai.baseUrl'))}</span>
+        <input type="text" class="st-input" data-field="baseUrl" data-pid="${esc(p.id)}"
+               placeholder="${esc(meta.defaultBaseUrl || '')}" value="${esc(p.baseUrl || '')}"/>
+      </label>
+      <label class="st-field">
+        <span class="st-field-label">${esc(t('settings.ai.model'))}</span>
+        <input type="text" class="st-input" data-field="model" data-pid="${esc(p.id)}"
+               placeholder="${esc(meta.defaultModel || '')}" value="${esc(p.model || '')}"/>
+      </label>
+      ${secretField}
+      <div class="st-field">
+        <span class="st-field-label">${esc(t('settings.ai.capabilities'))}</span>
+        <div class="st-check-group">
+          <label class="st-inline-check"><input type="checkbox" data-cap="vision" data-pid="${esc(p.id)}" ${caps.vision !== false ? 'checked' : ''}/><span>${esc(t('settings.ai.capVision'))}</span></label>
+          <label class="st-inline-check"><input type="checkbox" data-cap="chat" data-pid="${esc(p.id)}" ${caps.chat !== false ? 'checked' : ''}/><span>${esc(t('settings.ai.capChat'))}</span></label>
+          <label class="st-inline-check"><input type="checkbox" data-cap="embeddings" data-pid="${esc(p.id)}" ${caps.embeddings ? 'checked' : ''}/><span>${esc(t('settings.ai.capEmbeddings'))}</span></label>
+        </div>
+      </div>
+      <div class="st-field">
+        <span class="st-field-label">${esc(t('settings.ai.allowances'))}</span>
+        <div class="st-check-group">
+          <label class="st-inline-check"><input type="checkbox" data-allow="autoClassify" data-pid="${esc(p.id)}" ${allow.autoClassify !== false ? 'checked' : ''}/><span>${esc(t('settings.ai.allowAutoClassify'))}</span></label>
+          <label class="st-inline-check"><input type="checkbox" data-allow="sendExternal" data-pid="${esc(p.id)}" ${allow.sendExternal ? 'checked' : ''}/><span>${esc(t('settings.ai.allowSendExternal'))}</span></label>
+        </div>
+        ${meta.external ? `<span class="st-field-hint">${esc(t('settings.ai.allowSendExternalHint'))}</span>` : ''}
+      </div>
+      <div class="st-ai-test-row">
+        <button class="st-btn-secondary" data-test="${esc(p.id)}">${esc(t('settings.ai.test'))}</button>
+        <span class="st-ai-test-result" id="st-test-result-${esc(p.id)}"></span>
+      </div>
+    </div>`;
+}
+
+function findProv(id) { return (_settings.ai.providers || []).find(p => p.id === id); }
+function genId() { return 'p_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+
+function addProvider(kind) {
+  const meta = PROVIDER_KINDS[kind] || PROVIDER_KINDS['openai'];
+  const id = genId();
+  const p = {
+    id,
+    name: meta.label || kind,
+    kind,
+    baseUrl: meta.defaultBaseUrl || '',
+    model: meta.defaultModel || '',
+    requiresKey: !!meta.requiresKey,
+    secretRef: 'ai.provider.' + id,
+    enabled: true,
+    capabilities: { vision: true, chat: true, embeddings: false },
+    // External providers default to NOT sending data outward until the user opts in.
+    allow: { autoClassify: true, sendExternal: !meta.external },
+  };
+  _settings.ai.providers.push(p);
+  if (!_settings.ai.activeProviderId) _settings.ai.activeProviderId = id;
+  _editingProviderId = id;
+  persist({ ai: _settings.ai });
+  renderTopic();
+}
+
+async function refreshSecretStatus(p) {
+  const el = document.getElementById('st-secret-status-' + p.id);
+  if (!el) return;
+  try {
+    const s = window.api.secretsStatus ? await window.api.secretsStatus(p.secretRef) : { isSet: false };
+    if (s && s.isSet) {
+      const warn = s.protected === false;
+      el.textContent = t('settings.ai.secretStatusSet', { last4: s.last4 || '••••' })
+        + (warn ? ' — ' + t('settings.ai.secretUnprotected') : '');
+      el.className = 'st-secret-status set' + (warn ? ' warn' : '');
+    } else {
+      el.textContent = t('settings.ai.secretStatusNone');
+      el.className = 'st-secret-status none';
+    }
+  } catch (_) {
+    el.textContent = t('settings.ai.secretStatusNone');
+    el.className = 'st-secret-status none';
+  }
+}
+
 function wireAI() {
   const sig = _abort.signal;
+  const a = _settings.ai;
   const save = () => persist({ ai: _settings.ai });
+
   document.getElementById('st-ai-enabled')?.addEventListener('change', (e) => {
-    _settings.ai.enabled = e.target.checked; save(); renderTopic();
-  }, { signal: sig });
-  document.getElementById('st-ai-provider')?.addEventListener('change', (e) => {
-    _settings.ai.provider = e.target.value; save(); renderTopic();
-  }, { signal: sig });
-  document.getElementById('st-ai-endpoint')?.addEventListener('change', (e) => {
-    _settings.ai.endpoint = e.target.value.trim(); save();
-  }, { signal: sig });
-  document.getElementById('st-ai-key')?.addEventListener('change', (e) => {
-    _settings.ai.apiKey = e.target.value.trim(); save();
-  }, { signal: sig });
-  document.getElementById('st-ai-model')?.addEventListener('change', (e) => {
-    _settings.ai.model = e.target.value.trim(); save();
+    a.enabled = e.target.checked; save(); renderTopic();
   }, { signal: sig });
   document.getElementById('st-ai-autotag')?.addEventListener('change', (e) => {
-    _settings.ai.autoTag = e.target.checked; save();
+    a.autoTag = e.target.checked; save();
+  }, { signal: sig });
+  document.getElementById('st-prov-add')?.addEventListener('click', () => {
+    const kind = document.getElementById('st-prov-kind')?.value || 'openai';
+    addProvider(kind);
   }, { signal: sig });
 
-  document.getElementById('st-ai-test')?.addEventListener('click', async () => {
-    const out = document.getElementById('st-ai-test-result');
-    if (out) { out.className = 'st-ai-test-result'; out.textContent = t('settings.ai.testing'); }
-    // Ensure the latest field values are saved before testing
-    _settings.ai.endpoint = document.getElementById('st-ai-endpoint')?.value.trim() ?? _settings.ai.endpoint;
-    _settings.ai.apiKey   = document.getElementById('st-ai-key')?.value.trim() ?? _settings.ai.apiKey;
-    _settings.ai.model    = document.getElementById('st-ai-model')?.value.trim() ?? _settings.ai.model;
-    await save();
-    try {
-      const r = window.api.aiTest ? await window.api.aiTest() : { ok: false, error: 'not-available' };
-      if (out) {
-        out.classList.add(r.ok ? 'ok' : 'bad');
-        out.textContent = r.ok ? t('settings.ai.testOk') : (t('settings.ai.testFail') + (r.error ? ': ' + r.error : ''));
+  document.querySelectorAll('[data-active]').forEach(el => {
+    el.addEventListener('change', () => {
+      a.activeProviderId = el.getAttribute('data-active'); save(); renderTopic();
+    }, { signal: sig });
+  });
+  document.querySelectorAll('[data-enable]').forEach(el => {
+    el.addEventListener('change', () => {
+      const p = findProv(el.getAttribute('data-enable'));
+      if (p) { p.enabled = el.checked; save(); }
+    }, { signal: sig });
+  });
+  document.querySelectorAll('[data-edit]').forEach(el => {
+    el.addEventListener('click', () => {
+      const id = el.getAttribute('data-edit');
+      _editingProviderId = (_editingProviderId === id) ? null : id;
+      renderTopic();
+    }, { signal: sig });
+  });
+  document.querySelectorAll('[data-remove]').forEach(el => {
+    el.addEventListener('click', async () => {
+      const id = el.getAttribute('data-remove');
+      const p = findProv(id);
+      if (!p) return;
+      if (!confirm(t('settings.ai.removeConfirm', { name: p.name || id }))) return;
+      if (p.secretRef && window.api.secretsDelete) { try { await window.api.secretsDelete(p.secretRef); } catch (_) {} }
+      a.providers = a.providers.filter(x => x.id !== id);
+      if (a.activeProviderId === id) a.activeProviderId = a.providers[0]?.id || null;
+      if (_editingProviderId === id) _editingProviderId = null;
+      save(); renderTopic();
+    }, { signal: sig });
+  });
+
+  document.querySelectorAll('[data-field]').forEach(el => {
+    el.addEventListener('change', () => {
+      const p = findProv(el.getAttribute('data-pid'));
+      if (p) { p[el.getAttribute('data-field')] = el.value.trim(); save(); }
+    }, { signal: sig });
+  });
+  document.querySelectorAll('[data-cap]').forEach(el => {
+    el.addEventListener('change', () => {
+      const p = findProv(el.getAttribute('data-pid'));
+      if (p) { p.capabilities = p.capabilities || {}; p.capabilities[el.getAttribute('data-cap')] = el.checked; save(); }
+    }, { signal: sig });
+  });
+  document.querySelectorAll('[data-allow]').forEach(el => {
+    el.addEventListener('change', () => {
+      const p = findProv(el.getAttribute('data-pid'));
+      if (p) { p.allow = p.allow || {}; p.allow[el.getAttribute('data-allow')] = el.checked; save(); }
+    }, { signal: sig });
+  });
+
+  document.querySelectorAll('[data-secret-set]').forEach(el => {
+    el.addEventListener('click', async () => {
+      const id = el.getAttribute('data-secret-set');
+      const p = findProv(id);
+      const input = document.getElementById('st-secret-input-' + id);
+      if (!p || !input) return;
+      const val = input.value.trim();
+      if (!val) return;
+      try { await window.api.secretsSet(p.secretRef, val); } catch (_) {}
+      input.value = '';
+      refreshSecretStatus(p);
+    }, { signal: sig });
+  });
+  document.querySelectorAll('[data-secret-del]').forEach(el => {
+    el.addEventListener('click', async () => {
+      const p = findProv(el.getAttribute('data-secret-del'));
+      if (!p) return;
+      try { await window.api.secretsDelete(p.secretRef); } catch (_) {}
+      refreshSecretStatus(p);
+    }, { signal: sig });
+  });
+
+  document.querySelectorAll('[data-test]').forEach(el => {
+    el.addEventListener('click', async () => {
+      const id = el.getAttribute('data-test');
+      const out = document.getElementById('st-test-result-' + id);
+      if (out) { out.className = 'st-ai-test-result'; out.textContent = t('settings.ai.testing'); }
+      await save();
+      try {
+        const r = window.api.aiTest ? await window.api.aiTest(id) : { ok: false, error: 'not-available' };
+        if (out) {
+          out.classList.add(r.ok ? 'ok' : 'bad');
+          out.textContent = r.ok ? t('settings.ai.testOk') : (t('settings.ai.testFail') + (r.error ? ': ' + r.error : ''));
+        }
+      } catch (err) {
+        if (out) { out.classList.add('bad'); out.textContent = t('settings.ai.testFail') + ': ' + (err.message || err); }
       }
-    } catch (err) {
-      if (out) { out.classList.add('bad'); out.textContent = t('settings.ai.testFail') + ': ' + (err.message || err); }
-    }
-  }, { signal: sig });
+    }, { signal: sig });
+  });
+
+  // Populate the async secret status for the currently open edit form
+  if (_editingProviderId) {
+    const p = findProv(_editingProviderId);
+    const meta = p ? (PROVIDER_KINDS[p.kind] || {}) : {};
+    if (p && meta.canHaveKey) refreshSecretStatus(p);
+  }
 }
 
 /* ================================================================== *
@@ -586,6 +794,30 @@ function injectCSS() {
 .st-ai-test-result.ok { color:#1f9d55; }
 .st-ai-test-result.bad { color:#d64545; }
 .st-ai-note { font-size:11.5px; color:var(--muted,#8a90a0); line-height:1.5; }
+.st-subhead-plain { font-size:13px; font-weight:700; }
+.st-prov-list { display:flex; flex-direction:column; gap:10px; }
+.st-prov-card { border:1px solid var(--border,#e2e5ee); border-radius:10px; background:var(--surface,#f9fafc); overflow:hidden; }
+.st-prov-card.active { border-color:#7c5cff; box-shadow:0 0 0 2px rgba(124,92,255,.12); }
+.st-prov-row { display:flex; align-items:center; gap:12px; padding:12px 14px; }
+.st-prov-active input { width:16px; height:16px; cursor:pointer; }
+.st-prov-main { flex:1; min-width:0; }
+.st-prov-name { font-size:13.5px; font-weight:600; }
+.st-prov-meta { display:flex; align-items:center; gap:8px; margin-top:3px; flex-wrap:wrap; }
+.st-prov-badge { font-size:10.5px; font-weight:600; padding:2px 7px; border-radius:20px; background:#eceafc; color:#5b3fd6; }
+.st-prov-badge.ext { background:#fff1e6; color:#c2610c; }
+.st-prov-badge.local { background:#e6f6ec; color:#1f9d55; }
+.st-prov-url { font-size:11px; color:var(--muted,#8a90a0); font-family:monospace; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.st-prov-en { font-size:12px; }
+.st-prov-form { display:flex; flex-direction:column; gap:14px; padding:0 14px 16px; border-top:1px solid var(--border,#e8eaf1); padding-top:14px; }
+.st-check-group { display:flex; flex-wrap:wrap; gap:14px; }
+.st-secret-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.st-secret-input { flex:1; min-width:180px; max-width:320px; }
+.st-secret-status { font-size:12px; font-weight:600; }
+.st-secret-status.set { color:#1f9d55; }
+.st-secret-status.set.warn { color:#c2610c; }
+.st-secret-status.none { color:var(--muted,#8a90a0); }
+.st-prov-add { display:flex; align-items:center; gap:10px; }
+.st-prov-add .st-input { max-width:240px; }
 .st-about-name { font-size:18px; font-weight:700; }
 .st-about-ver { font-size:12px; color:var(--muted,#8a90a0); font-weight:500; }
 .st-about-list { list-style:none; padding:0; margin:14px 0; display:flex; flex-direction:column; gap:8px; font-size:13px; }
