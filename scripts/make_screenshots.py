@@ -345,29 +345,27 @@ def main():
             print("collections file select skipped:", e)
         shoot(page, "06-collections.png")
 
-        # ---- Projects: tree + assets grid ----
+        # ---- Projects catalog: card grid with search + view toggle ----
         page.click('.nav-item[data-view="projects"]')
-        # Wait for async mount() to complete and render tree nodes
+        # Wait for async mount() to complete and render the catalog cards
         try:
-            page.wait_for_selector('.pv-tree-node', timeout=5000)
+            page.wait_for_selector('.pv-card[data-open]', timeout=5000)
         except Exception as e:
-            print("projects tree wait failed:", e)
-        # Click first project to show assets grid
-        try:
-            page.click('.pv-tree-node-content', timeout=3000)
-            page.wait_for_timeout(600)
-        except Exception as e:
-            print("projects tree select skipped:", e)
-        # Screenshot: project list + assets grid
+            print("projects catalog wait failed:", e)
+        # Screenshot: catalog (project cards + toolbar)
         shoot(page, "07-projects.png")
 
-        # Screenshot 2: click first asset card to populate inspector
+        # ---- Projects detail: enter a project, select an asset ----
         try:
-            page.wait_for_selector('.pv-asset-card', timeout=3000)
-            page.click('.pv-asset-card', timeout=3000)
+            page.click('.pv-card[data-open]', timeout=3000)
+            page.wait_for_selector('.pv-detail', timeout=3000)
+            page.wait_for_timeout(400)
+            # Click first asset item to populate the inspector
+            page.wait_for_selector('.pv-asset-item[data-asset]', timeout=3000)
+            page.click('.pv-asset-item[data-asset]', timeout=3000)
             page.wait_for_timeout(500)
         except Exception as e:
-            print("projects asset select skipped:", e)
+            print("projects detail navigation skipped:", e)
         shoot(page, "07b-projects-detail.png")
 
         # ---- Settings: open the AI & Vision topic ----
