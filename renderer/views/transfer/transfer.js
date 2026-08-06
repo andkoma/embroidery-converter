@@ -86,13 +86,13 @@ function buildHTML() {
   <!-- Left: Source Files -->
   <aside class="tr-source-panel">
     <div class="tr-panel-header">
-      <h3>Source Files</h3>
-      <button id="tr-add-files-btn" class="tr-icon-btn" title="Add files">+</button>
+      <h3>${t('transfer.sourceFiles')}</h3>
+      <button id="tr-add-files-btn" class="tr-icon-btn" title="${t('transfer.addFiles')}">+</button>
     </div>
     <div id="tr-source-list" class="tr-source-list">
       <div class="tr-empty-state">
-        <p>No files selected</p>
-        <p class="tr-hint">Click + or use Gallery/Batch hand-off</p>
+        <p>${t('transfer.noFiles')}</p>
+        <p class="tr-hint">${t('transfer.filesHint')}</p>
       </div>
     </div>
   </aside>
@@ -100,32 +100,32 @@ function buildHTML() {
   <!-- Center: Destination Picker -->
   <main class="tr-dest-panel">
     <div class="tr-panel-header">
-      <h3>Destination</h3>
-      <button id="tr-refresh-dest-btn" class="tr-icon-btn" title="Refresh drives">⟳</button>
+      <h3>${t('transfer.destination')}</h3>
+      <button id="tr-refresh-dest-btn" class="tr-icon-btn" title="${t('transfer.refreshDrives')}">⟳</button>
     </div>
     
     <div class="tr-dest-sections">
       <!-- Removable Drives -->
       <section class="tr-dest-section">
-        <h4>Removable Drives</h4>
+        <h4>${t('transfer.removableDrives')}</h4>
         <div id="tr-drives-list" class="tr-dest-list">
-          <div class="tr-scanning">Scanning...</div>
+          <div class="tr-scanning">${t('transfer.scanning')}</div>
         </div>
       </section>
       
       <!-- Favorites -->
       <section class="tr-dest-section">
-        <h4>Favorites</h4>
+        <h4>${t('transfer.favorites')}</h4>
         <div id="tr-favorites-list" class="tr-dest-list">
-          <div class="tr-empty-hint">No favorites yet</div>
+          <div class="tr-empty-hint">${t('transfer.noFavorites')}</div>
         </div>
       </section>
       
       <!-- Custom Path -->
       <section class="tr-dest-section">
-        <h4>Custom Destination</h4>
+        <h4>${t('transfer.customDest')}</h4>
         <div class="tr-custom-picker">
-          <button id="tr-pick-custom-btn" class="tr-btn-secondary">Browse…</button>
+          <button id="tr-pick-custom-btn" class="tr-btn-secondary">${t('transfer.browse')}</button>
           <div id="tr-custom-path" class="tr-custom-path"></div>
         </div>
       </section>
@@ -134,24 +134,24 @@ function buildHTML() {
     <!-- Selected Destination Display -->
     <div id="tr-selected-dest" class="tr-selected-dest hidden">
       <div class="tr-selected-label">
-        <strong>Selected:</strong> <span id="tr-selected-path"></span>
+        <strong>${t('transfer.selected')}</strong> <span id="tr-selected-path"></span>
       </div>
-      <button id="tr-add-favorite-btn" class="tr-btn-favorite">★ Add to Favorites</button>
+      <button id="tr-add-favorite-btn" class="tr-btn-favorite">★ ${t('transfer.addFavorite')}</button>
     </div>
   </main>
 
   <!-- Right: Machine Profile & Settings -->
   <aside class="tr-settings-panel">
     <div class="tr-panel-header">
-      <h3>Transfer Settings</h3>
+      <h3>${t('transfer.settings')}</h3>
     </div>
     
     <div class="tr-settings-content">
       <!-- Machine Profile -->
       <div class="tr-setting-group">
-        <h4>Machine Profile</h4>
+        <h4>${t('transfer.machineProfile')}</h4>
         <select id="tr-machine-select" class="tr-select">
-          <option value="">Auto-detect</option>
+          <option value="">${t('transfer.autoDetect')}</option>
           <option value="brother">Brother (PES)</option>
           <option value="janome">Janome (JEF)</option>
           <option value="pfaff">Pfaff (VP3)</option>
@@ -167,30 +167,30 @@ function buildHTML() {
       
       <!-- Transfer Options -->
       <div class="tr-setting-group">
-        <h4>Options</h4>
+        <h4>${t('transfer.options')}</h4>
         <label class="tr-checkbox">
           <input type="checkbox" id="tr-auto-convert" checked />
-          <span>Auto-convert to machine format</span>
+          <span>${t('transfer.autoConvert')}</span>
         </label>
         <label class="tr-checkbox">
           <input type="checkbox" id="tr-verify-copy" checked />
-          <span>Verify copy integrity</span>
+          <span>${t('transfer.verifyCopy')}</span>
         </label>
         <label class="tr-checkbox">
           <input type="checkbox" id="tr-create-subfolder" />
-          <span>Create dated subfolder</span>
+          <span>${t('transfer.createSubfolder')}</span>
         </label>
       </div>
       
       <!-- Transfer Button -->
-      <button id="tr-transfer-btn" class="tr-btn-primary" disabled>Transfer Files</button>
+      <button id="tr-transfer-btn" class="tr-btn-primary" disabled>${t('transfer.transferBtn')}</button>
       
       <!-- Progress -->
       <div id="tr-progress" class="tr-progress hidden">
         <div class="tr-progress-bar">
           <div id="tr-progress-fill" class="tr-progress-fill"></div>
         </div>
-        <div id="tr-progress-text" class="tr-progress-text">Preparing...</div>
+        <div id="tr-progress-text" class="tr-progress-text">${t('transfer.preparing')}</div>
       </div>
     </div>
   </aside>
@@ -563,7 +563,7 @@ async function refreshDestinations() {
   const drivesList = document.getElementById('tr-drives-list');
   if (!drivesList) return;
   
-  drivesList.innerHTML = '<div class="tr-scanning">Scanning drives...</div>';
+  drivesList.innerHTML = `<div class="tr-scanning">${t('transfer.scanning')}</div>`;
   
   try {
     // Call backend to list removable volumes
@@ -579,13 +579,13 @@ async function refreshDestinations() {
     }));
     
     if (_destinations.length === 0) {
-      drivesList.innerHTML = '<div class="tr-empty-hint">No removable drives detected</div>';
+      drivesList.innerHTML = `<div class="tr-empty-hint">${t('transfer.noDrives')}</div>`;
     } else {
       renderDestinations();
     }
   } catch (err) {
     console.error('Error listing volumes:', err);
-    drivesList.innerHTML = '<div class="tr-empty-hint">Error scanning drives</div>';
+    drivesList.innerHTML = `<div class="tr-empty-hint">${t('transfer.scanError')}</div>`;
   }
 }
 
@@ -596,7 +596,7 @@ function renderDestinations() {
   const drives = _destinations.filter(d => d.type === 'drive');
   
   if (drives.length === 0) {
-    drivesList.innerHTML = '<div class="tr-empty-hint">No removable drives detected</div>';
+    drivesList.innerHTML = `<div class="tr-empty-hint">${t('transfer.noDrives')}</div>`;
     return;
   }
   
@@ -620,7 +620,7 @@ function loadFavorites() {
   if (!favoritesList) return;
   
   if (favorites.length === 0) {
-    favoritesList.innerHTML = '<div class="tr-empty-hint">No favorites yet</div>';
+    favoritesList.innerHTML = `<div class="tr-empty-hint">${t('transfer.noFavorites')}</div>`;
     return;
   }
   
@@ -643,7 +643,7 @@ async function addToFavorites() {
   
   // Check if already in favorites
   if (favorites.some(f => f.path === _selectedDest.path)) {
-    alert('This destination is already in favorites');
+    alert(t('transfer.alreadyFavorite'));
     return;
   }
   
@@ -715,8 +715,8 @@ function renderSourceList() {
   if (_sourceFiles.length === 0) {
     sourceList.innerHTML = `
       <div class="tr-empty-state">
-        <p>No files selected</p>
-        <p class="tr-hint">Click + or use Gallery/Batch hand-off</p>
+        <p>${t('transfer.noFiles')}</p>
+        <p class="tr-hint">${t('transfer.filesHint')}</p>
       </div>
     `;
     return;
@@ -801,7 +801,7 @@ function updateMachineInfo() {
   const machineKey = select.value;
   
   if (!machineKey) {
-    info.textContent = 'Will attempt to detect machine from destination';
+    info.textContent = t('transfer.autoDetectInfo');
     _machineProfile = null;
     return;
   }
@@ -853,7 +853,7 @@ async function executeTransfer() {
       const file = _sourceFiles[i];
       
       if (progressText) {
-        progressText.textContent = `Transferring ${i + 1} / ${total}: ${file.name}`;
+        progressText.textContent = t('transfer.progressTransfer', { current: i + 1, total, name: file.name });
       }
       if (progressFill) {
         progressFill.style.width = `${((i / total) * 100)}%`;
@@ -867,7 +867,7 @@ async function executeTransfer() {
         
         if (!_machineProfile.formats.includes(file.ext.toUpperCase())) {
           if (progressText) {
-            progressText.textContent = `Converting ${file.name} to ${targetFormat.toUpperCase()}...`;
+            progressText.textContent = t('transfer.progressConvert', { name: file.name, format: targetFormat.toUpperCase() });
           }
           
           // Use convert API (stub - needs implementation in main.js)
@@ -897,18 +897,18 @@ async function executeTransfer() {
     }
     
     if (progressFill) progressFill.style.width = '100%';
-    if (progressText) progressText.textContent = `Transfer complete: ${total} file(s)`;
+    if (progressText) progressText.textContent = t('transfer.progressComplete', { count: total });
     
     setTimeout(() => {
       if (progressDiv) progressDiv.classList.add('hidden');
       if (progressFill) progressFill.style.width = '0%';
     }, 3000);
     
-    alert(`Successfully transferred ${total} file(s) to ${_selectedDest.path}`);
+    alert(t('transfer.successAlert', { count: total, path: _selectedDest.path }));
     
   } catch (err) {
     console.error('Transfer error:', err);
-    alert('Transfer failed: ' + (err.message || String(err)));
+    alert(t('transfer.failedAlert', { error: err.message || String(err) }));
   } finally {
     _transferInProgress = false;
     if (transferBtn) transferBtn.disabled = false;

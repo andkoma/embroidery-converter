@@ -118,15 +118,15 @@ function buildHTML() {
   <!-- ── Source Folders panel ── -->
   <aside class="bv-panel bv-sources">
     <div class="bv-panel-header">
-      <span class="bv-panel-title">Source Folders</span>
+      <span class="bv-panel-title">${t('batch.sources')}</span>
       <div class="bv-header-actions">
-        <button id="bv-refresh-btn" class="bv-icon-btn" title="Re-scan folders" disabled>
+        <button id="bv-refresh-btn" class="bv-icon-btn" title="${t('batch.refresh')}" disabled>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
                stroke-linecap="round" stroke-linejoin="round">
             <path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 .49-5H1"/>
           </svg>
         </button>
-        <button id="bv-add-folder-btn" class="bv-icon-btn bv-accent" title="Add folders">
+        <button id="bv-add-folder-btn" class="bv-icon-btn bv-accent" title="${t('batch.addFolder')}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
                stroke-linecap="round" stroke-linejoin="round">
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
@@ -151,7 +151,7 @@ function buildHTML() {
             <circle cx="11" cy="11" r="8"/>
             <line x1="21" y1="21" x2="16.65" y2="16.65"/>
           </svg>
-          <input id="bv-search" class="bv-search-input" type="text" placeholder="Search by name…"/>
+          <input id="bv-search" class="bv-search-input" type="text" placeholder="${t('batch.search')}"/>
         </div>
         <span id="bv-scan-status" class="bv-scan-status"></span>
         <span id="bv-file-count" class="bv-file-count">0 files</span>
@@ -178,10 +178,10 @@ function buildHTML() {
         <label class="bv-col-check">
           <input type="checkbox" id="bv-select-all"/>
         </label>
-        <span class="bv-col-name">Name</span>
-        <span class="bv-col-ext">Type</span>
-        <span class="bv-col-size">Size</span>
-        <span class="bv-col-status">Status</span>
+        <span class="bv-col-name">${t('batch.name')}</span>
+        <span class="bv-col-ext">${t('batch.type')}</span>
+        <span class="bv-col-size">${t('batch.size')}</span>
+        <span class="bv-col-status">${t('batch.status')}</span>
       </div>
     </div>
 
@@ -199,11 +199,11 @@ function buildHTML() {
   <!-- ── Batch profile panel ── -->
   <aside class="bv-panel bv-profile">
     <div class="bv-panel-header">
-      <span class="bv-panel-title">Batch Profile</span>
+      <span class="bv-panel-title">${t('batch.profile')}</span>
     </div>
     <div class="bv-profile-body">
 
-      <label class="bv-field-label">Output Format</label>
+      <label class="bv-field-label">${t('batch.outputFormat')}</label>
       <select id="bv-out-format" class="bv-select">
         <option value="dst">DST — Tajima</option>
         <option value="pes" selected>PES — Brother</option>
@@ -215,35 +215,35 @@ function buildHTML() {
         <option value="sew">SEW — Janome</option>
       </select>
 
-      <label class="bv-field-label">Output Folder</label>
+      <label class="bv-field-label">${t('batch.outputFolder')}</label>
       <div class="bv-dir-row">
         <input id="bv-out-dir" class="bv-input bv-dir-input" type="text"
-               placeholder="Same as source" readonly/>
-        <button id="bv-out-dir-btn" class="bv-browse-btn" title="Browse">…</button>
+               placeholder="${t('batch.sameAsSource')}" readonly/>
+        <button id="bv-out-dir-btn" class="bv-browse-btn" title="${t('batch.browse')}">…</button>
       </div>
 
       <details class="bv-section" open>
-        <summary class="bv-section-title">Resize</summary>
+        <summary class="bv-section-title">${t('batch.resize')}</summary>
         <div class="bv-resize-row">
-          <label>W (mm)
+          <label>${t('batch.width')}
             <input id="bv-resize-w" class="bv-input bv-dim-input"
                    type="number" min="1" max="500" step="1" placeholder="—"/>
           </label>
-          <label>H (mm)
+          <label>${t('batch.height')}
             <input id="bv-resize-h" class="bv-input bv-dim-input"
                    type="number" min="1" max="500" step="1" placeholder="—"/>
           </label>
         </div>
         <label class="bv-check-label">
           <input type="checkbox" id="bv-resample"/>
-          Resample stitches
+          ${t('batch.resample')}
         </label>
       </details>
 
       <details class="bv-section">
-        <summary class="bv-section-title">Color Limit</summary>
+        <summary class="bv-section-title">${t('batch.colorLimit')}</summary>
         <div class="bv-resize-row">
-          <label>Max colors
+          <label>${t('batch.maxColors')}
             <input id="bv-color-limit" class="bv-input bv-dim-input"
                    type="number" min="1" max="64" step="1" placeholder="—"/>
           </label>
@@ -251,18 +251,18 @@ function buildHTML() {
       </details>
 
       <details class="bv-section">
-        <summary class="bv-section-title">Conflicts</summary>
+        <summary class="bv-section-title">${t('batch.conflicts')}</summary>
         <label class="bv-check-label">
           <input type="radio" name="bv-conflict" value="suffix" checked/>
-          Add suffix&nbsp;<span class="bv-mono">(name (1).pes)</span>
+          ${t('batch.suffix')}&nbsp;<span class="bv-mono">(name (1).pes)</span>
         </label>
         <label class="bv-check-label">
           <input type="radio" name="bv-conflict" value="overwrite"/>
-          Overwrite existing
+          ${t('batch.overwrite')}
         </label>
         <label class="bv-check-label">
           <input type="radio" name="bv-conflict" value="skip"/>
-          Skip file
+          ${t('batch.skip')}
         </label>
       </details>
 
