@@ -23,13 +23,14 @@ echo "🧹 Entferne Quarantine-Attribute..."
 echo "   (kann einige Sekunden dauern)"
 echo ""
 
-# REKURSIV alle Dateien bereinigen
-echo "  ⏳ Quarantine-Attribute..."
-find "$APP_LOCATION" -type f -exec xattr -d com.apple.quarantine {} \; 2>/dev/null
-echo "  ✅ Entfernt"
-
-echo "  ⏳ ACL-Attribute..."
-find "$APP_LOCATION" -type f -exec xattr -d com.apple.macl {} \; 2>/dev/null || true
+# WICHTIG: -r (rekursiv) bereinigt auch das .app-Bundle-Verzeichnis selbst,
+# nicht nur die enthaltenen Dateien. Ohne das Bundle-Verzeichnis zu bereinigen,
+# bleibt Gatekeeper blockiert, weil macOS das Quarantine-Flag primär auf dem
+# Bundle-Verzeichnis prüft. Wir verwenden /usr/bin/xattr explizit, damit ein
+# eventuell per Homebrew installiertes xattr (ohne -r Unterstützung) nicht
+# stattdessen verwendet wird.
+echo "  ⏳ Quarantine- und alle sonstigen Attribute (rekursiv)..."
+/usr/bin/xattr -cr "$APP_LOCATION" 2>/dev/null
 echo "  ✅ Entfernt"
 
 echo ""
