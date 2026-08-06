@@ -44,7 +44,7 @@
       }
     ],
     "publish": null,
-    "afterPack": "scripts/afterSign.js",
+    "afterPack": null,
     "afterSign": null,
     "win": {
       "target": ["nsis"],
