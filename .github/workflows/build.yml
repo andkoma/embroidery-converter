@@ -56,7 +56,9 @@ jobs:
       - name: Build macOS (${{ matrix.arch }})
         env:
           DEBUG: "electron-builder*"
-          CSC_IDENTITY_AUTO_DISCOVERY: "true"
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          CSC_LINK: "-"
+          CSC_KEY_PASSWORD: ""
         run: npx electron-builder --mac --${{ matrix.arch }} 2>&1 | tee build-output.log
       
       - name: Apply entitlements with ad-hoc code signing
