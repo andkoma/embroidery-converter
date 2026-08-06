@@ -70,6 +70,7 @@ let _tree = null;           // Grouping tree instance
 let _activeProject = null;  // Currently selected project ID
 let _activeAsset = null;    // Currently inspected asset ID
 let _abortCtrl = null;      // AbortController for event cleanup
+let _hostEl = null;         // Host DOM element for this view
 
 // ----------------------------------------------------------------
 // Persistence
@@ -105,10 +106,8 @@ function getTreeNodes() {
 function addProject(name) {
   if (!_tree) return;
   const id = uid();
-  _tree.addNode({
+  _tree.addNode(null, name || t('projects.newProject'), {
     id,
-    name: name || t('projects.newProject'),
-    parentId: null,
     type: 'project',
     createdAt: Date.now(),
     assets: [],
@@ -122,10 +121,8 @@ function addProject(name) {
 function addFolder(parentId, name) {
   if (!_tree) return;
   const id = uid();
-  _tree.addNode({
+  _tree.addNode(parentId, name || t('projects.newFolder'), {
     id,
-    name: name || t('projects.newFolder'),
-    parentId,
     type: 'folder',
     createdAt: Date.now(),
     assets: []
@@ -502,7 +499,7 @@ function formatDate(ms) {
 function wireEvents() {
   _abortCtrl = new AbortController();
   const sig = _abortCtrl.signal;
-  const host = document.getElementById(HOST_ID);
+  const host = _hostEl;
   if (!host) return;
   
   // Tree events
@@ -646,8 +643,9 @@ function saveInspectorFields() {
 // ----------------------------------------------------------------
 
 async function mount(viewHost) {
-  const host = document.getElementById(viewHost);
+  const host = typeof viewHost === 'string' ? document.getElementById(viewHost) : viewHost;
   if (!host) return;
+  _hostEl = host;
   
   // Inject scoped CSS
   const style = document.createElement('style');
@@ -936,6 +934,7 @@ function unmount() {
   _tree = null;
   _activeProject = null;
   _activeAsset = null;
+  _hostEl = null;
 }
 
 // ----------------------------------------------------------------

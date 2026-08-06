@@ -345,22 +345,30 @@ def main():
             print("collections file select skipped:", e)
         shoot(page, "06-collections.png")
 
-        # ---- Projects: tree + assets grid + inspector ----
+        # ---- Projects: tree + assets grid ----
         page.click('.nav-item[data-view="projects"]')
-        page.wait_for_timeout(1200)
-        # Select the first project to show its assets.
+        # Wait for async mount() to complete and render tree nodes
         try:
-            page.click('.pv-tree-node', timeout=2500)
+            page.wait_for_selector('.pv-tree-node', timeout=5000)
+        except Exception as e:
+            print("projects tree wait failed:", e)
+        # Click first project to show assets grid
+        try:
+            page.click('.pv-tree-node-content', timeout=3000)
             page.wait_for_timeout(600)
         except Exception as e:
             print("projects tree select skipped:", e)
-        # Select an asset to populate the inspector.
+        # Screenshot: project list + assets grid
+        shoot(page, "07-projects.png")
+
+        # Screenshot 2: click first asset card to populate inspector
         try:
-            page.click('.pv-asset-card', timeout=2500)
+            page.wait_for_selector('.pv-asset-card', timeout=3000)
+            page.click('.pv-asset-card', timeout=3000)
             page.wait_for_timeout(500)
         except Exception as e:
             print("projects asset select skipped:", e)
-        shoot(page, "07-projects.png")
+        shoot(page, "07b-projects-detail.png")
 
         # ---- Settings: open the AI & Vision topic ----
         page.click('.nav-item[data-view="settings"]')
