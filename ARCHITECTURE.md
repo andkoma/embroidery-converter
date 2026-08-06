@@ -1,6 +1,6 @@
 # 🏗️ Embroidery Converter — Architecture & Design Plan
 
-**Status:** ✅ Phase A, B, C & D COMPLETE · **App Version:** 1.1.0 · **Doc Rev:** 0.5 · **Date:** 2026-08-05
+**Status:** ✅ Phase A, B, C, D, E & F COMPLETE · **App Version:** 1.1.0 · **Doc Rev:** 0.6 · **Date:** 2026-08-06
 **Author org:** orgware.ai (andkoma@akopp.de) · *Created with AI support.*
 
 This document is the **design blueprint** for evolving the app from a single-screen
@@ -434,6 +434,37 @@ Planned enhancements for production-quality visualization:
 **Exit criteria:** ✅ user organizes designs into nested collections, uses AI to auto-classify designs (respecting provider capabilities and allowances), manages multiple AI providers with encrypted API keys (never exposed to renderer), configures application preferences across all settings topics.
 
 **Commits:** 5ac96ad (E1-E3: Collections panel), fb2a7f5 (E4-E10: Encrypted secrets + multi-provider AI registry)
+
+---
+
+### Phase F — Projects  ✅ **COMPLETE**
+- F1. ✅ Shared grouping core (`renderer/core/grouping.js`) — tree helpers, asset-kind detection (`assetKind(path)` → 'embroidery'|'image'|'document'|'note'), preview rendering utilities (`renderPreviewSVG`, `rasterizePreview`)
+- F2. ✅ Zero-dependency ZIP module (`main/zip.js`) — custom `zipSync`/`unzipSync` using Node `zlib` (no archiver/yauzl at runtime) for `.ecproj` package format
+- F3. ✅ Projects storage service + IPC (`main.js`):
+  - `project:export` — builds .ecproj ZIP (manifest.json + assets/ + previews/)
+  - `project:import` — extracts .ecproj, rewrites asset paths to extracted copies
+  - `dialog:openAnyFiles` — file picker for all types (documents, images, embroidery)
+  - `fs:readText` — helper for inline note editing
+- F4. ✅ Projects view (`renderer/views/projects/projects.js`) — three-column layout:
+  - **Tree panel** (left): project list, CRUD operations (new/rename/remove), export/import buttons
+  - **Assets grid** (center): mixed asset types (embroidery with preview, images, documents, notes) with kind icons
+  - **Inspector panel** (right): asset details, notes textarea, tags input, metadata table
+- F5. ✅ Data model: `settings.projects` array of project nodes `{id, name, parentId, type:'project', assets:[...], createdAt}`; assets schema `{id, name, path, kind, size, mtime, preview?, tags[], category, notes, versions[{id,path,mtime,label,isActive}]}`
+- F6. ✅ Copy-on-export strategy: assets referenced by path while editing, copied into ZIP only on export (keeps package lean, avoids duplication)
+- F7. ✅ Navigation wiring: Projects nav item added to `index.html` (right after Collections), `shell.js` `IMPLEMENTED_VIEWS`, grouping.js loaded in core scripts block
+- F8. ✅ i18n (EN/DE/FR): `nav.projects` + full `projects.*` key set (title, CRUD, assets, inspector, export/import success/error messages)
+- F9. ✅ Screenshot harness updated (`scripts/make_screenshots.py`) — demo projects data + Projects panel capture (07-projects.png, Settings renumbered to 08)
+- F10. ✅ Documentation updates: README.md (view count 6→8, Projects screenshot), APPLICATION.md (view table + Section 7 Projects), ARCHITECTURE.md (Phase F)
+
+**Exit criteria:** ✅ user creates projects, adds mixed asset types (embroidery/images/documents/notes), organizes them hierarchically, adds metadata (notes/tags/category), exports projects as .ecproj packages, imports .ecproj files to restore projects with extracted assets.
+
+**Technical highlights:**
+- **Zero runtime dependencies** for ZIP (archiver/yauzl are electron-builder devDeps, not bundled) — custom CRC32 + DEFLATE implementation keeps installers lean
+- **Shared grouping core** reusable by Collections (tree helpers, asset classification) — reduces duplication and enables consistent UX patterns
+- **.ecproj package format** is a plain ZIP archive (interop-verified with system `unzip -l/-t`) containing `manifest.json` (project metadata + tree structure), `assets/<assetId>.<ext>` (copied files), `previews/<assetId>.json` (embroidery/image previews)
+- **Copy-on-export** avoids file duplication during editing — assets stay in their original locations; only on export are they read and bundled into the .ecproj ZIP
+
+**Commits:** (to be added after git commit)
 
 ---
 

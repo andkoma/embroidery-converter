@@ -39,8 +39,8 @@ supports 80+ embroidery formats.
 
 ## 🖼️ Application Overview
 
-Embroidery Converter is a **multi-panel workstation** with six purpose-built
-views — **Convert**, **Batch**, **Gallery**, **Simulator**, **Transfer** and **Collections** —
+Embroidery Converter is a **multi-panel workstation** with eight purpose-built
+views — **Convert**, **Batch**, **Gallery**, **Collections**, **Projects**, **Simulator**, **Transfer** and **Settings** —
 sharing one backend, one data model and a fully translated (EN/DE/FR) UI.
 
 **Convert** — add files, tune per-file options, convert to any target format:
@@ -59,11 +59,15 @@ sharing one backend, one data model and a fully translated (EN/DE/FR) UI.
 
 ![Collections view](docs/screenshots/06-collections.png)
 
+**Projects** — manage embroidery projects with mixed asset types (designs, images, documents, notes) in a hierarchical structure. Export/import as .ecproj packages:
+
+![Projects view](docs/screenshots/07-projects.png)
+
 **Settings** — manage AI providers, encryption secrets, and application preferences:
 
-![Settings view](docs/screenshots/07-settings.png)
+![Settings view](docs/screenshots/08-settings.png)
 
-👉 **[See the full application guide with every view](./APPLICATION.md)** (all six views included).
+👉 **[See the full application guide with every view](./APPLICATION.md)** (all eight views included).
 
 ---
 

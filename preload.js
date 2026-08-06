@@ -182,7 +182,25 @@ contextBridge.exposeInMainWorld('api', {
   openFiles:       ()    => ipcRenderer.invoke('dialog:openFiles'),
   selectOutputDir: ()    => ipcRenderer.invoke('dialog:selectOutputDir'),
   pickFolders:     ()    => ipcRenderer.invoke('dialog:pickFolders'),
+  openAnyFiles:    ()    => ipcRenderer.invoke('dialog:openAnyFiles'),
   defaultDir:      ()    => ipcRenderer.invoke('fs:defaultDir'),
+  readText:        (path) => ipcRenderer.invoke('fs:readText', { path }),
+
+  /* ---------------------------------------------------------------- *
+   *  Projects (.ecproj package export/import)
+   * ---------------------------------------------------------------- */
+  /**
+   * Export a project to an .ecproj ZIP package.
+   * @param {{ manifest:object, assets:object[], previews?:object[] }} params
+   * @returns {Promise<{success:boolean, path?:string, error?:string}>}
+   */
+  projectExport: (params) => ipcRenderer.invoke('project:export', params),
+  /**
+   * Import a .ecproj package (shows dialog if zipPath omitted).
+   * @param {{ zipPath?:string }} params
+   * @returns {Promise<{success:boolean, manifest?:object, error?:string}>}
+   */
+  projectImport: (params = {}) => ipcRenderer.invoke('project:import', params),
 
   /* ---------------------------------------------------------------- *
    *  Shell helpers

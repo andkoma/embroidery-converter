@@ -10,7 +10,7 @@ is powered by the vendored, pure-Python
 step required in packaged builds).
 
 The app is organised as a **multi-panel workstation** with a left icon rail that
-switches between seven purpose-built views that share one backend, one data model
+switches between eight purpose-built views that share one backend, one data model
 and one settings store:
 
 | View | Purpose |
@@ -18,9 +18,10 @@ and one settings store:
 | **Convert** | Add a few files, tune per-file options, convert to a target format |
 | **Batch** | Scan folders, filter/search, and convert many files with a shared profile |
 | **Gallery** | File-manager-style browse of managed folders with previews & detail pane |
+| **Collections** | Organize designs into nested collections with AI-powered classification |
+| **Projects** | Manage embroidery projects with mixed asset types (designs, images, documents) |
 | **Simulator** | Animated stitch-by-stitch playback in real thread colors |
 | **Transfer** | Copy (and auto-convert) designs to removable machine drives |
-| **Collections** | Organize designs into nested collections with AI-powered classification |
 | **Settings** | Manage AI providers, encrypted secrets, and application preferences |
 
 The interface is fully translated into **English**, **Deutsch** and **Français**
@@ -166,9 +167,46 @@ in Settings.
 
 ---
 
-## 7. Settings
+## 7. Projects
 
-![Settings view](docs/screenshots/07-settings.png)
+![Projects view](docs/screenshots/07-projects.png)
+
+The **Projects** view enables comprehensive project management for embroidery
+workflows, supporting mixed asset types beyond just stitch files:
+
+- **Three-column layout** — project tree (left) | asset grid (center) | inspector
+  (right) — for efficient navigation and organization.
+- **Mixed asset types** — organize embroidery designs, reference images, PDF
+  documents, and text notes together in one project.
+- **Hierarchical structure** — create project folders and subfolders to group
+  related assets logically.
+- **Asset metadata** — add notes, tags, and category labels to each asset;
+  embroidery files show full stitch previews.
+- **Version tracking** — maintain multiple versions of each asset with labels
+  and active-version markers (roadmap: full version history UI).
+- **Package export/import** — export entire projects (or subtrees) as
+  `.ecproj` ZIP packages containing manifest + all assets + previews. Import
+  packages to restore or share projects across machines.
+- **Copy-on-export strategy** — assets remain in their original locations while
+  editing; they are copied into the package only on export, keeping projects
+  lightweight and avoiding duplication.
+
+Projects data is persisted in `userData/settings.json` under the `projects` key.
+The `.ecproj` package format is a custom ZIP archive (`manifest.json` +
+`assets/` folder + `previews/` JSON files) built with a zero-dependency ZIP
+implementation to avoid runtime bloat.
+
+**Use Cases:**
+- Organize designs, artwork, and reference docs for a client commission.
+- Bundle related embroidery files (e.g. all letters of a monogram alphabet) with
+  usage notes.
+- Archive completed projects as shareable `.ecproj` files for backup or handoff.
+
+---
+
+## 8. Settings
+
+![Settings view](docs/screenshots/08-settings.png)
 
 The **Settings** panel provides centralized configuration across six topics:
 

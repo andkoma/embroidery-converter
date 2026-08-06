@@ -10,6 +10,7 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const { spawn, spawnSync } = require('child_process');
+const zipModule = require('./main/zip');
 
 const isDev = process.argv.includes('--dev') || !app.isPackaged;
 
@@ -345,6 +346,14 @@ const SETTINGS_DEFAULTS = {
   // Collections tree — flat array of nodes with parentId (null = root).
   // node: { id, name, parentId, files: [{path,name,ext}], tags: [], createdAt }
   collections: [],
+  // Projects tree — flat array of nodes with parentId (null = root). A project
+  // node bundles heterogeneous assets (embroidery / image / document / note),
+  // organised into subfolders, each asset optionally version-tracked.
+  // node: { id, name, parentId, kind:'project'|'folder', assets:[...],
+  //         subfolders:[string], meta:{client,status,notes,hoop}, createdAt }
+  // asset: { id, name, ext, akind, folder, tags:[], category,
+  //          versions:[{id,path,name,size,mtime,savedAt,note}], activeVersion }
+  projects: [],
   defaultMachine: '',          // default machine profile id for transfer
 };
 
@@ -868,6 +877,212 @@ ipcMain.handle('secrets:set', async (_e, { ref, value } = {}) => {
 ipcMain.handle('secrets:delete', async (_e, { ref } = {}) => {
   deleteSecretValue(ref);
   return { isSet: false };
+});
+
+/* ------------------------------------------------------------------ *
+ *  Projects IPC – Export/Import .ecproj packages
+ * 
+ *  Projects hold a mixture of embroidery files, images, documents, and
+ *  notes, organized in a folder tree. The .ecproj package is a ZIP-based
+ *  format (manifest.json + assets/ + previews/) written by main/zip.js.
+ *  
+ *  Copy-on-export: assets are referenced by path while editing; they are
+ *  copied into the .ecproj only on export. This keeps the package lean
+ *  and allows users to organize their source files independently.
+ * ------------------------------------------------------------------ */
+
+/**
+ * Export a project (or subtree) to an .ecproj ZIP package.
+ * @param {Object} params
+ * @param {Object} params.manifest - Full manifest: {version, name, tree, assets}
+ * @param {Array}  params.assets - [{id, path, ...asset metadata}]
+ * @param {Array}  params.previews - [{id, preview: {polylines, ...}}] (optional)
+ * @returns {Promise<{success: boolean, path?: string, error?: string}>}
+ */
+ipcMain.handle('project:export', async (_e, { manifest, assets = [], previews = [] } = {}) => {
+  if (!manifest) return { success: false, error: 'Missing manifest' };
+  
+  try {
+    // Show save dialog
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: 'Export Project',
+      defaultPath: `${manifest.name || 'project'}.ecproj`,
+      filters: [{ name: 'Embroidery Project', extensions: ['ecproj'] }],
+      properties: ['createDirectory', 'showOverwriteConfirmation']
+    });
+    
+    if (result.canceled || !result.filePath) {
+      return { success: false, error: 'Cancelled' };
+    }
+    
+    const zipEntries = [];
+    
+    // 1. Write manifest.json
+    zipEntries.push({
+      name: 'manifest.json',
+      data: JSON.stringify(manifest, null, 2),
+      mtime: new Date()
+    });
+    
+    // 2. Copy assets into assets/ folder (copy-on-export)
+    for (const asset of assets) {
+      if (!asset.path || !fs.existsSync(asset.path)) {
+        console.warn(`Skipping missing asset: ${asset.id} (${asset.path})`);
+        continue;
+      }
+      
+      try {
+        const data = fs.readFileSync(asset.path);
+        const stats = fs.statSync(asset.path);
+        const ext = path.extname(asset.path);
+        zipEntries.push({
+          name: `assets/${asset.id}${ext}`,
+          data,
+          mtime: stats.mtime
+        });
+      } catch (err) {
+        console.warn(`Failed to read asset ${asset.id}:`, err.message);
+      }
+    }
+    
+    // 3. Write previews as JSON (for embroidery/image assets)
+    for (const prev of previews) {
+      if (!prev.id || !prev.preview) continue;
+      zipEntries.push({
+        name: `previews/${prev.id}.json`,
+        data: JSON.stringify(prev.preview),
+        mtime: new Date()
+      });
+    }
+    
+    // 4. Build ZIP using our zero-dependency zip module
+    const zipBuf = zipModule.zipSync(zipEntries);
+    fs.writeFileSync(result.filePath, zipBuf);
+    
+    return { success: true, path: result.filePath };
+    
+  } catch (error) {
+    console.error('Project export failed:', error);
+    return { success: false, error: error.message || String(error) };
+  }
+});
+
+/**
+ * Import a .ecproj package: extract assets, return manifest + updated paths.
+ * @param {Object} params
+ * @param {string} params.zipPath - Path to .ecproj file (optional; shows dialog if omitted)
+ * @returns {Promise<{success: boolean, manifest?: Object, error?: string}>}
+ */
+ipcMain.handle('project:import', async (_e, { zipPath } = {}) => {
+  try {
+    let importPath = zipPath;
+    
+    // Show open dialog if no path provided
+    if (!importPath) {
+      const result = await dialog.showOpenDialog(mainWindow, {
+        title: 'Import Project',
+        filters: [{ name: 'Embroidery Project', extensions: ['ecproj'] }],
+        properties: ['openFile']
+      });
+      
+      if (result.canceled || !result.filePaths.length) {
+        return { success: false, error: 'Cancelled' };
+      }
+      importPath = result.filePaths[0];
+    }
+    
+    if (!fs.existsSync(importPath)) {
+      return { success: false, error: 'File not found' };
+    }
+    
+    // 1. Unzip the .ecproj package
+    const zipBuf = fs.readFileSync(importPath);
+    const entries = zipModule.unzipSync(zipBuf);
+    
+    // 2. Extract manifest
+    const manifestEntry = entries.find(e => e.name === 'manifest.json');
+    if (!manifestEntry) {
+      return { success: false, error: 'Invalid .ecproj: missing manifest.json' };
+    }
+    
+    const manifest = JSON.parse(manifestEntry.data.toString('utf8'));
+    
+    // 3. Create extraction directory: userData/projects/imported_<timestamp>_<name>
+    const timestamp = Date.now();
+    const safeName = (manifest.name || 'project').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const extractDir = path.join(app.getPath('userData'), 'projects', `imported_${timestamp}_${safeName}`);
+    fs.mkdirSync(extractDir, { recursive: true });
+    
+    // 4. Extract all assets from assets/ folder
+    const assetMap = {}; // id -> extracted local path
+    for (const entry of entries) {
+      if (!entry.name.startsWith('assets/')) continue;
+      
+      const fileName = path.basename(entry.name);
+      const destPath = path.join(extractDir, fileName);
+      fs.writeFileSync(destPath, entry.data);
+      
+      // Map asset ID (filename without extension) to extracted path
+      const assetId = path.basename(fileName, path.extname(fileName));
+      assetMap[assetId] = destPath;
+    }
+    
+    // 5. Rewrite asset paths in manifest to point to extracted files
+    if (manifest.assets && Array.isArray(manifest.assets)) {
+      for (const asset of manifest.assets) {
+        if (asset.id && assetMap[asset.id]) {
+          asset.path = assetMap[asset.id];
+          // Update mtime/size from extracted file
+          try {
+            const stats = fs.statSync(asset.path);
+            asset.mtime = stats.mtime.getTime();
+            asset.size = stats.size;
+          } catch (_) {}
+        }
+      }
+    }
+    
+    // 6. Return updated manifest (renderer will merge into settings.projects)
+    return { success: true, manifest };
+    
+  } catch (error) {
+    console.error('Project import failed:', error);
+    return { success: false, error: error.message || String(error) };
+  }
+});
+
+/**
+ * Open file picker for any file type (documents, images, embroidery, etc.)
+ * Used by Projects view to add non-embroidery assets.
+ */
+ipcMain.handle('dialog:openAnyFiles', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Select files',
+    properties: ['openFile', 'multiSelections'],
+    filters: [
+      { name: 'All Files', extensions: ['*'] },
+      { name: 'Documents', extensions: ['pdf', 'doc', 'docx', 'txt', 'rtf', 'odt'] },
+      { name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp'] }
+    ]
+  });
+  
+  if (result.canceled) return [];
+  return result.filePaths;
+});
+
+/**
+ * Read a text file (for inline note editing in Projects).
+ * Notes can be stored as inline text in settings or as .txt assets; this
+ * helper allows reading existing text files.
+ */
+ipcMain.handle('fs:readText', async (_e, { path: filePath } = {}) => {
+  if (!filePath) return { success: false, error: 'Missing path' };
+  try {
+    const content = fs.readFileSync(filePath, 'utf8');
+    return { success: true, content };
+  } catch (error) {
+    return { success: false, error: error.message || String(error) };
+  }
 });
 
 /* ------------------------------------------------------------------ *

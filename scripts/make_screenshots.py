@@ -121,6 +121,34 @@ def init_script(data):
       { id: 'c-marine', name: 'Nautical', parentId: null, tags: [], createdAt: now,
         files: D.files.filter(f => f.name.indexOf('nautical') === 0).map(f => fileObj(f, { category: 'Nautical', tags: ['anchor'] })) },
     ],
+    projects: [
+      { id: 'proj-demo', name: 'Spring Collection 2026', parentId: null, type: 'project', createdAt: now,
+        assets: [
+          { id: 'asset-1', name: D.files[0].name, path: D.files[0].path, kind: 'embroidery',
+            size: D.files[0].size, mtime: D.files[0].mtime, addedAt: now,
+            preview: D.files[0].inspect.preview, tags: ['floral'], category: 'Flowers',
+            notes: 'Beautiful tulip design for spring projects', versions: [
+              { id: 'v1', path: D.files[0].path, mtime: D.files[0].mtime, label: 'Original', isActive: true }
+            ] },
+          { id: 'asset-2', name: D.files[1].name, path: D.files[1].path, kind: 'embroidery',
+            size: D.files[1].size, mtime: D.files[1].mtime, addedAt: now,
+            preview: D.files[1].inspect.preview, tags: ['nautical'], category: 'Marine',
+            notes: '', versions: [
+              { id: 'v1', path: D.files[1].path, mtime: D.files[1].mtime, label: 'Original', isActive: true }
+            ] },
+        ],
+        subfolders: [] },
+      { id: 'proj-monograms', name: 'Monogram Library', parentId: null, type: 'project', createdAt: now,
+        assets: [
+          { id: 'asset-3', name: D.files[2].name, path: D.files[2].path, kind: 'embroidery',
+            size: D.files[2].size, mtime: D.files[2].mtime, addedAt: now,
+            preview: D.files[2].inspect.preview, tags: ['letter'], category: 'Monograms',
+            notes: 'Letter A monogram', versions: [
+              { id: 'v1', path: D.files[2].path, mtime: D.files[2].mtime, label: 'Original', isActive: true }
+            ] },
+        ],
+        subfolders: [] },
+    ],
   };
   function metaOf(f) {
     const m = f.inspect || {};
@@ -201,6 +229,15 @@ def init_script(data):
     ensureDir:     async () => true,
     copyFile:      async () => true,
     verifyFile:    async () => true,
+    openAnyFiles:  async () => D.files.slice(0, 2).map(f => f.path),
+    readText:      async (path) => ({ success: true, content: 'Sample note text...' }),
+    projectExport: async ({ manifest }) => ({ success: true, path: '/Users/demo/Desktop/' + (manifest.name || 'project') + '.ecproj' }),
+    projectImport: async () => ({ success: true, manifest: { tree: { id: 'imported', name: 'Imported Project', assets: [] } } }),
+    statDir:       async (p) => ({ exists: true, mtime: now, isDir: false }),
+    getThumbnail:  async (p, mt) => {
+      const f = byPath.get(p);
+      return f ? { meta: metaOf(f), preview: f.inspect.preview } : null;
+    },
     platform:      'darwin',
   };
 })();
@@ -308,6 +345,23 @@ def main():
             print("collections file select skipped:", e)
         shoot(page, "06-collections.png")
 
+        # ---- Projects: tree + assets grid + inspector ----
+        page.click('.nav-item[data-view="projects"]')
+        page.wait_for_timeout(1200)
+        # Select the first project to show its assets.
+        try:
+            page.click('.pv-tree-node', timeout=2500)
+            page.wait_for_timeout(600)
+        except Exception as e:
+            print("projects tree select skipped:", e)
+        # Select an asset to populate the inspector.
+        try:
+            page.click('.pv-asset-card', timeout=2500)
+            page.wait_for_timeout(500)
+        except Exception as e:
+            print("projects asset select skipped:", e)
+        shoot(page, "07-projects.png")
+
         # ---- Settings: open the AI & Vision topic ----
         page.click('.nav-item[data-view="settings"]')
         page.wait_for_timeout(1000)
@@ -322,7 +376,7 @@ def main():
             page.wait_for_timeout(600)
         except Exception as e:
             print("settings provider edit skipped:", e)
-        shoot(page, "07-settings.png")
+        shoot(page, "08-settings.png")
 
         browser.close()
     print("done")
