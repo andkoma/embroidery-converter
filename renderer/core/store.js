@@ -146,6 +146,10 @@ const initialState = {
   // Files hand-off queue — file paths sent from Gallery ("Convert") to the Files view.
   filesQueue: [],
 
+  // Files panel persisted session — loaded file records survive panel switches.
+  // { files: [...], selectedId, seq, outputDir }
+  filesLoaded: null,
+
   // Simulator hand-off — single file path sent from Gallery ("Open in Simulator").
   simulatorQueue: null,
 

@@ -346,6 +346,7 @@ const FilesView = (() => {
       _files.push(file);
       if (_selectedId === null) _selectedId = file.id;
       render();
+      persistFiles();
       inspectFile(file);
     }
   }
@@ -361,6 +362,7 @@ const FilesView = (() => {
     widthMm.value = ''; heightMm.value = '';
     refreshReference();
     render();
+    persistFiles();
   }
 
   function selectedFile() {
@@ -385,6 +387,7 @@ const FilesView = (() => {
     }
     refreshReference();
     render();
+    persistFiles();
   }
 
   /**
@@ -435,6 +438,7 @@ const FilesView = (() => {
     }
     refreshReference();
     render();
+    persistFiles();
   }
 
   function clearAll() {
@@ -442,6 +446,7 @@ const FilesView = (() => {
     widthMm.value = ''; heightMm.value = '';
     renderPalette([]);
     render();
+    persistFiles();
   }
 
   /* ---------------------------------------------------------------- *
@@ -833,6 +838,19 @@ const FilesView = (() => {
     bindEvents();
     await init();
 
+    // Restore a previously loaded session (files survive panel switches).
+    const saved = (window.store && window.store.get('filesLoaded', null)) || null;
+    if (saved && Array.isArray(saved.files) && saved.files.length) {
+      _files      = saved.files;
+      _selectedId = saved.selectedId != null ? saved.selectedId : (_files[0] && _files[0].id) || null;
+      _seq        = saved.seq || (_files.reduce((m, f) => Math.max(m, f.id || 0), 0) + 1);
+      if (saved.outputDir) { _outputDir = saved.outputDir; if (outputDirEl) outputDirEl.value = _outputDir; }
+      refreshReference();
+      render();
+      // Re-inspect any files that never finished loading metadata.
+      _files.filter(f => !f.meta && f.status !== 'error').forEach(inspectFile);
+    }
+
     // Consume a hand-off from Gallery ("Convert") — a list of file paths to
     // load into the file selection. Robust across the preceding navigation.
     const queued = (window.store && window.store.get('filesQueue', [])) || [];
@@ -842,7 +860,16 @@ const FilesView = (() => {
     }
   }
 
+  function persistFiles() {
+    if (!window.store) return;
+    window.store.set('filesLoaded', {
+      files: _files, selectedId: _selectedId, seq: _seq, outputDir: _outputDir,
+    });
+  }
+
   function unmount() {
+    // Persist the loaded session so it survives the panel switch.
+    persistFiles();
     // Close the simulator modal (and unmount its view) if still open
     closeSimulator();
     // Cancel all event listeners registered with this AbortController

@@ -206,6 +206,8 @@ function buildHTML() {
 
     <div class="bv-table-footer">
       <span id="bv-sel-count" class="bv-sel-count"></span>
+      <button id="bv-sel-all-btn" class="bv-link-btn"></button>
+      <button id="bv-desel-all-btn" class="bv-link-btn" disabled></button>
       <button id="bv-add-project" class="bv-sec-btn" disabled></button>
       <button id="bv-add-collection" class="bv-sec-btn" disabled></button>
       <button id="bv-convert-btn" class="bv-convert-btn" disabled></button>
@@ -476,6 +478,11 @@ function injectStyles() {
 }
 .bv-sec-btn:disabled { opacity: .45; cursor: default; }
 .bv-sec-btn:hover:not(:disabled) { border-color: var(--accent,#4a6ef5); color: var(--accent,#4a6ef5); }
+.bv-link-btn {
+  padding: 6px 8px; border: none; background: none; cursor: pointer; font-size: 12px;
+  color: var(--accent,#4a6ef5); text-decoration: underline; transition: opacity .15s;
+}
+.bv-link-btn:disabled { opacity: .4; cursor: default; text-decoration: none; color: var(--muted,#8b93a7); }
 
 /* ── Profile panel ── */
 .bv-profile-body { padding: 12px; overflow-y: auto; flex: 1; }
@@ -634,6 +641,10 @@ function updateCounts() {
     selAll.checked       = allSel;
     selAll.indeterminate = !allSel && selCount > 0;
   }
+  const selAllBtn = document.getElementById('bv-sel-all-btn');
+  const deselBtn  = document.getElementById('bv-desel-all-btn');
+  if (selAllBtn) selAllBtn.disabled = _filtered.length === 0 || selCount === _filtered.length;
+  if (deselBtn)  deselBtn.disabled  = selCount === 0;
 }
 
 /* ------------------------------------------------------------------ *
@@ -1216,6 +1227,18 @@ function wireEvents() {
       renderContent(); updateCounts();
     }, { signal: sig });
 
+  // Footer select-all / deselect-all (visible in both list and card view)
+  document.getElementById('bv-sel-all-btn')
+    ?.addEventListener('click', () => {
+      _filtered.forEach(f => _selected.add(f.path));
+      renderContent(); updateCounts();
+    }, { signal: sig });
+  document.getElementById('bv-desel-all-btn')
+    ?.addEventListener('click', () => {
+      _filtered.forEach(f => _selected.delete(f.path));
+      renderContent(); updateCounts();
+    }, { signal: sig });
+
   // Selection checkbox (delegated on scroll container — works for both
   // list rows and cards, which share the data-path attribute).
   document.getElementById('bv-table-scroll')
@@ -1401,6 +1424,10 @@ async function mount(container, store) {
   if (addProjBtn) addProjBtn.textContent = t('pick.addToProject');
   const addCollBtn = document.getElementById('bv-add-collection');
   if (addCollBtn) addCollBtn.textContent = t('pick.addToCollection');
+  const selAllBtn = document.getElementById('bv-sel-all-btn');
+  if (selAllBtn) selAllBtn.textContent = t('batch.selectAll');
+  const deselAllBtn = document.getElementById('bv-desel-all-btn');
+  if (deselAllBtn) deselAllBtn.textContent = t('batch.deselectAll');
 
   const noFoldersMsg = document.getElementById('bv-no-folders-msg');
   if (noFoldersMsg) noFoldersMsg.innerHTML = t('batch.noFolders').replace('\n', '<br>');
