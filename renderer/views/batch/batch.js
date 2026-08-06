@@ -33,6 +33,9 @@ const BUF_ROWS = 8;    // extra rows to render above/below viewport
 const STYLE_ID = 'bv-styles';
 const SEP = (window.api && window.api.platform === 'win32') ? '\\' : '/';
 
+// Format preference order (same as Convert view for consistency)
+const PREFERRED_ORDER = ['pes','dst','jef','vp3','exp','xxx','u01','pec','tbf','csv','json','gcode','pmv'];
+
 /* ------------------------------------------------------------------ *
  *  Path helpers (shared display logic with Gallery)
  * ------------------------------------------------------------------ */
@@ -97,6 +100,7 @@ let _search    = '';
 let _extFilter = new Set();  // active ext filter; empty = all exts shown
 let _scanReqId = null;
 let _scanning  = false;
+let _formats   = [];         // { extension, description, write, read }[] from backend
 
 let _viewMode  = 'list';     // 'list' | 'card' (persisted in localStorage)
 let _thumbReqId = null;      // active thumbnail-stream request id
@@ -204,16 +208,7 @@ function buildHTML() {
     <div class="bv-profile-body">
 
       <label class="bv-field-label">${t('batch.outputFormat')}</label>
-      <select id="bv-out-format" class="bv-select">
-        <option value="dst">DST — Tajima</option>
-        <option value="pes" selected>PES — Brother</option>
-        <option value="jef">JEF — Janome</option>
-        <option value="vp3">VP3 — Husqvarna/Pfaff</option>
-        <option value="hus">HUS — Husqvarna</option>
-        <option value="xxx">XXX — Singer</option>
-        <option value="exp">EXP — Melco</option>
-        <option value="sew">SEW — Janome</option>
-      </select>
+      <select id="bv-out-format" class="bv-select"></select>
 
       <label class="bv-field-label">${t('batch.outputFolder')}</label>
       <div class="bv-dir-row">
@@ -1175,9 +1170,43 @@ function readProfile() {
 }
 
 /* ------------------------------------------------------------------ *
+ *  Format loading (same as Convert for consistency)
+ * ------------------------------------------------------------------ */
+async function loadFormats() {
+  const res = await window.api.listFormats();
+  if (res && res.success) {
+    _formats = res.formats;
+  } else {
+    // Fallback if backend unavailable
+    const fallback = ['dst','pes','pec','exp','jef','vp3','xxx','u01','tbf','csv','json','gcode','pmv'];
+    _formats = fallback.map(e => ({ extension: e, description: '', write: true, read: true }));
+  }
+
+  const writable = _formats.filter(f => f.write);
+  writable.sort((a, b) => {
+    const ia = PREFERRED_ORDER.indexOf(a.extension);
+    const ib = PREFERRED_ORDER.indexOf(b.extension);
+    return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib) || a.extension.localeCompare(b.extension);
+  });
+
+  const selectEl = document.getElementById('bv-out-format');
+  if (selectEl) {
+    selectEl.innerHTML = '';
+    for (const f of writable) {
+      const opt = document.createElement('option');
+      opt.value = f.extension;
+      opt.textContent = '.' + f.extension.toUpperCase() + (f.description ? '  —  ' + f.description : '');
+      selectEl.appendChild(opt);
+    }
+    // Default to PES if available, else first format
+    selectEl.value = writable.some(f => f.extension === 'pes') ? 'pes' : (writable[0] || {}).extension;
+  }
+}
+
+/* ------------------------------------------------------------------ *
  *  View lifecycle
  * ------------------------------------------------------------------ */
-function mount(container, store) {
+async function mount(container, store) {
   _container = container;
   _store     = store;
   _abortCtrl = new AbortController();
@@ -1189,6 +1218,7 @@ function mount(container, store) {
   _extFilter = new Set();
   _scanReqId = null;
   _scanning  = false;
+  _formats   = [];
   _thumbReqId = null;
   _tagsByPath = window.store.get('batchTags', {}) || {};
 
@@ -1201,6 +1231,9 @@ function mount(container, store) {
   injectStyles();
   container.innerHTML = buildHTML();
   wireEvents();
+
+  // Load formats from backend (async, same as Convert)
+  await loadFormats();
 
   // Set initial i18n text
   const convertBtn = document.getElementById('bv-convert-btn');
