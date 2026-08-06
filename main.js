@@ -993,7 +993,7 @@ ipcMain.handle('app:open-logs-folder', async () => {
  *  Project Handlers
  * ================================================================== */
 
-
+ipcMain.handle('project:export', async (_e, { manifest, assets = [], previews = [] } = {}) => {
   if (!manifest) return { success: false, error: 'Missing manifest' };
   
   try {
