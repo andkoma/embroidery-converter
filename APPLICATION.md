@@ -10,7 +10,7 @@ is powered by the vendored, pure-Python
 step required in packaged builds).
 
 The app is organised as a **multi-panel workstation** with a left icon rail that
-switches between five purpose-built views that share one backend, one data model
+switches between seven purpose-built views that share one backend, one data model
 and one settings store:
 
 | View | Purpose |
@@ -20,6 +20,8 @@ and one settings store:
 | **Gallery** | File-manager-style browse of managed folders with previews & detail pane |
 | **Simulator** | Animated stitch-by-stitch playback in real thread colors |
 | **Transfer** | Copy (and auto-convert) designs to removable machine drives |
+| **Collections** | Organize designs into nested collections with AI-powered classification |
+| **Settings** | Manage AI providers, encrypted secrets, and application preferences |
 
 The interface is fully translated into **English**, **Deutsch** and **Français**
 (selectable from the top bar and remembered between sessions). The backend status
@@ -131,6 +133,99 @@ The **Machine Transfer** view copies finished designs to embroidery machine medi
   integrity** (size comparison), and optionally **create a dated subfolder**.
 - Sequential copy with progress updates and verification, so files land in a form
   the target machine can actually read.
+
+---
+
+## 6. Collections
+
+![Collections view](docs/screenshots/06-collections.png)
+
+The **Collections** view provides a powerful organization system for your
+embroidery design library:
+
+- **Nested tree structure** with unlimited depth — create collections and
+  sub-collections to organize designs hierarchically (e.g. "Nature → Flowers →
+  Roses").
+- **Drag-and-drop organization** — move files between collections and reorder the
+  tree structure intuitively.
+- **Manual classification** — assign each design to a category and add descriptive
+  tags for filtering.
+- **AI-powered auto-classification** — let a vision model (OpenAI, Ollama, or any
+  OpenAI-compatible endpoint) analyze design thumbnails and suggest categories +
+  tags automatically. Respects provider capabilities (vision on/off) and
+  functional allowances (autoClassify permission).
+- **Tag-based filtering** — click tag chips to instantly filter the file grid to
+  matching designs.
+- **Search** — find designs by name across all collections.
+- **File inspector** — select any design to see its preview, metadata, category,
+  and tags; edit classifications inline.
+
+Collections data is stored in `userData/collections.json` and persists across
+sessions. The AI classification feature requires an AI provider to be configured
+in Settings.
+
+---
+
+## 7. Settings
+
+![Settings view](docs/screenshots/07-settings.png)
+
+The **Settings** panel provides centralized configuration across six topics:
+
+### General
+- **Language** — choose between English, Deutsch, or Français (applied
+  app-wide and remembered between sessions).
+- **Theme** — light theme (currently the only option).
+
+### Folders (Managed Folders)
+- Add/remove folders used by Gallery and Batch views.
+- Configure recursive scanning and assign custom aliases (e.g. "Client Work"
+  instead of `/Users/me/Embroidery/Clients`).
+- Editable inline by double-clicking folder labels.
+
+### Conversion (Batch Defaults)
+- **Default format** — the output format preset for Batch conversions (DST, PES,
+  JEF, etc.).
+- **Resample** — whether to resample stitches when resizing (boolean).
+- **Color limit** — maximum thread colors (null = no limit).
+- **Conflict strategy** — filename conflict handling: `suffix` (add number) or
+  `overwrite`.
+
+### Transfer (Favorite Destinations)
+- Quick-access destinations for copying files to USB drives or network shares.
+- Add/remove/edit favorite paths with custom labels (e.g. "Brother USB").
+
+### AI & Vision
+- **Multi-provider registry** — add, configure, and manage multiple AI providers
+  (OpenAI, OpenAI-compatible, Ollama, LM Studio).
+- **Per-provider configuration:**
+  - **Kind** (determines API contract and whether a key is required)
+  - **API base URL** (custom endpoints supported)
+  - **Model** (e.g. `gpt-4o-mini`, `llava`)
+  - **Capabilities** (vision / chat / embeddings toggles)
+  - **Functional allowances** (autoClassify, sendExternal for privacy control)
+- **Encrypted secrets store** — API keys and tokens are encrypted via Electron
+  `safeStorage` (OS keychain: macOS Keychain / Windows DPAPI / Linux libsecret)
+  and stored in `userData/secrets.enc` (mode `0600`). Plaintext secrets **never**
+  cross back to the renderer — only `{isSet, last4, protected}` status is exposed.
+- **Conditional secret fields** — the API key field is shown/collected/transmitted
+  **only** for provider kinds that use keys (OpenAI, OpenAI-compatible). Local
+  runtimes (Ollama, LM Studio) never show a key field or send an `Authorization`
+  header.
+- **Active provider selection** — choose which provider powers AI classification
+  in Collections.
+- **Per-provider test** — validate connectivity and model availability for each
+  configured provider.
+- **Auto-tag** toggle — whether AI classification should suggest descriptive tags
+  in addition to categories.
+
+### About
+- Application name, version, copyright (© 2026 orgware.ai), author, website,
+  license, and AI transparency notice.
+
+All settings are persisted to `userData/settings.json` and restored on app
+startup. Secrets are stored separately in an encrypted file and never appear in
+plaintext in settings.
 
 ---
 

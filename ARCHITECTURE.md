@@ -30,6 +30,8 @@ one backend, one data model, and one settings store:
 | **Gallery / Explorer** | File-manager-style browse of managed folders with previews, filter, detail pane | **B** |
 | **Simulator** | Time-lapse animation of the stitch-out for a selected file | **C** |
 | **Machine Transfer** | Send files to machines via mounted USB / network shares (later: link protocols) | **D** |
+| **Collections** | Organize designs into nested collections with AI-powered auto-classification | **E** |
+| **Settings** | Manage AI providers, encrypted secrets, folders, conversion defaults, and UI preferences | **E** |
 
 ### Design principles
 
@@ -414,6 +416,24 @@ Planned enhancements for production-quality visualization:
 **Exit criteria:** ✅ user selects files (direct or from Gallery/Batch), chooses destination (removable drive/favorite/custom path), selects machine profile, transfers with auto-conversion if needed, verifies copies, sees progress updates.
 
 **Commits:** [D1-D7: complete transfer implementation]
+
+---
+
+### Phase E — Collections & Settings  ✅ **COMPLETE**
+- E1. ✅ Collections view with nested tree structure (unlimited depth, drag-and-drop organization)
+- E2. ✅ Manual and AI-powered classification with vision model integration
+- E3. ✅ Tag management system with filter chips and search
+- E4. ✅ Encrypted secrets store using Electron safeStorage (OS keychain: macOS Keychain / Windows DPAPI / Linux libsecret)
+- E5. ✅ Multi-provider AI registry with per-provider configuration (kind, API URL, model, capabilities, permissions)
+- E6. ✅ Settings panel with six topics: General (language/theme), Folders (managed paths), Conversion (defaults), Transfer (favorites), AI & Vision (provider registry + secrets), About
+- E7. ✅ Secret field conditional rendering: shown/collected/transmitted ONLY for provider kinds that require keys (OpenAI, OpenAI-compatible); hidden for local runtimes (Ollama, LM Studio)
+- E8. ✅ Provider capability flags (vision/chat/embeddings) and functional allowances (autoClassify, sendExternal for privacy)
+- E9. ✅ Legacy settings migration: single-provider AI config auto-migrated to registry, plaintext API keys moved to encrypted store
+- E10. ✅ i18n (EN/DE/FR collections.*, settings.ai.* keys including providers/secrets/capabilities) + syntax validation
+
+**Exit criteria:** ✅ user organizes designs into nested collections, uses AI to auto-classify designs (respecting provider capabilities and allowances), manages multiple AI providers with encrypted API keys (never exposed to renderer), configures application preferences across all settings topics.
+
+**Commits:** 5ac96ad (E1-E3: Collections panel), fb2a7f5 (E4-E10: Encrypted secrets + multi-provider AI registry)
 
 ---
 
