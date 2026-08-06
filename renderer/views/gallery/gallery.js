@@ -32,6 +32,7 @@ let _selected       = null;      // FileEntry currently shown in detail modal
 let _marked         = new Set(); // marked file paths (for Send to Batch)
 
 let _activeExtFilter = null;     // null = All
+let _activeFolderId  = null;     // null = all folders; else restrict grid to one folder
 let _searchQuery     = '';
 let _sortMode        = 'name-asc';
 let _viewMode        = 'card';   // 'card' | 'list'
@@ -214,7 +215,9 @@ function injectCSS() {
 .gv-root {
   display: grid;
   grid-template-columns: 240px 1fr;
+  grid-template-rows: minmax(0, 1fr);
   height: 100%;
+  min-height: 0;
   background: var(--surface, #f4f6fb);
   color: var(--text, #1c2333);
   font-size: 13px;
@@ -223,6 +226,7 @@ function injectCSS() {
 /* ── Folders panel ── */
 .gv-folders-panel {
   display: flex; flex-direction: column;
+  min-height: 0;
   background: var(--panel-bg, #fff);
   border-right: 1px solid var(--border, #e3e7ef);
 }
@@ -271,13 +275,29 @@ function injectCSS() {
   opacity: .6; transition: opacity .15s, color .15s;
 }
 .gv-folder-remove:hover { opacity: 1; color: var(--error, #d64545); }
+.gv-folder-item { cursor: pointer; transition: background .15s, border-color .15s; }
+.gv-folder-item.active {
+  border-color: var(--accent, #5b5bd6);
+  background: var(--accent-subtle, #ececfb);
+}
+.gv-folder-item.active .gv-folder-label { color: var(--accent, #5b5bd6); font-weight: 600; }
+.gv-folder-all { margin-bottom: 6px; }
+.gv-folder-rec {
+  flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; padding: 0; border-radius: 4px; border: none;
+  background: transparent; cursor: pointer; color: var(--muted, #6b7385);
+  opacity: .5; transition: opacity .15s, color .15s, background .15s;
+}
+.gv-folder-rec svg { width: 13px; height: 13px; }
+.gv-folder-rec:hover { opacity: 1; background: var(--hover-bg, #f0f2f9); }
+.gv-folder-rec.on { opacity: 1; color: var(--accent, #5b5bd6); }
 .gv-empty-folders {
   padding: 28px 14px; text-align: center; color: var(--muted, #6b7385);
   font-size: 12px; line-height: 1.6;
 }
 
 /* ── Grid panel ── */
-.gv-grid-panel { display: flex; flex-direction: column; min-width: 0; }
+.gv-grid-panel { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .gv-toolbar {
   display: flex; align-items: center; gap: 10px;
   padding: 10px 14px; background: var(--panel-header-bg, #f9fafd);
@@ -466,17 +486,43 @@ function renderFolderList() {
     return;
   }
 
-  container.innerHTML = _managedFolders.map(folder => `
-    <div class="gv-folder-item" data-id="${esc(folder.id)}">
+  // "All folders" pseudo-item to clear the active source filter.
+  const allActive = _activeFolderId === null ? ' active' : '';
+  let html = `
+    <div class="gv-folder-item gv-folder-all${allActive}" data-id="__all__" title="${esc(t('gallery.allFolders'))}">
+      <svg class="gv-folder-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
+        <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+      </svg>
+      <span class="gv-folder-label">${esc(t('gallery.allFolders'))}</span>
+    </div>`;
+
+  html += _managedFolders.map(folder => {
+    const active = _activeFolderId === folder.id ? ' active' : '';
+    const recOn  = folder.recursive !== false;
+    return `
+    <div class="gv-folder-item${active}" data-id="${esc(folder.id)}">
       <svg class="gv-folder-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
         <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
       </svg>
       <span class="gv-folder-label" data-id="${esc(folder.id)}"
             title="${esc(folder.path)}">${esc(folderLabel(folder))}</span>
+      <button class="gv-folder-rec${recOn ? ' on' : ''}" data-id="${esc(folder.id)}"
+              title="${esc(recOn ? t('gallery.recursiveOn') : t('gallery.recursiveOff'))}"
+              aria-pressed="${recOn ? 'true' : 'false'}">
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+          <polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+        </svg>
+      </button>
       <button class="gv-folder-remove" data-id="${esc(folder.id)}" title="Remove">×</button>
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
+
+  container.innerHTML = html;
 }
 
 function beginAliasEdit(id) {
@@ -506,6 +552,32 @@ function beginAliasEdit(id) {
 
 function persistFolders() {
   window.api.setSettings({ managedFolders: _managedFolders }).catch(() => {});
+}
+
+/* ------------------------------------------------------------------ *
+ *  Source-folder filter + per-folder recursion
+ * ------------------------------------------------------------------ */
+/** Restrict the grid to a single managed folder (null = all folders). */
+function setActiveFolder(id) {
+  _activeFolderId = id;
+  renderFolderList();
+  applyFilters();
+}
+
+/** Toggle whether a folder is scanned recursively; re-scan that folder. */
+async function toggleFolderRecursive(id) {
+  const folder = _managedFolders.find(f => f.id === id);
+  if (!folder) return;
+  folder.recursive = folder.recursive === false ? true : false;
+  persistFolders();
+  renderFolderList();
+  // Invalidate this folder's cache so the recursion change takes effect.
+  const cache = window.store.get('scanCache', {}) || {};
+  delete cache[folder.path];
+  window.store.set('scanCache', cache);
+  _allFiles = _allFiles.filter(f => !belongsTo(f.path, folder.path));
+  applyFilters();
+  await loadAndScan(false);
 }
 
 /* ------------------------------------------------------------------ *
@@ -558,18 +630,20 @@ async function loadAndScan(forceAll) {
   const keep = [];
 
   for (const folder of _managedFolders) {
+    const recursive = folder.recursive !== false;
     let stat = { exists: true, mtime: 0 };
     try { stat = await window.api.statDir(folder.path); } catch (_) {}
     const entry = cache[folder.path];
     if (!forceAll && entry && Array.isArray(entry.files) &&
-        stat.exists && entry.dirMtime === stat.mtime) {
+        stat.exists && entry.dirMtime === stat.mtime && entry.recursive === recursive) {
       keep.push(...entry.files);        // cache hit — folder unchanged
     } else {
-      toScan.push({ path: folder.path, mtime: stat.mtime });
+      toScan.push({ path: folder.path, mtime: stat.mtime, recursive });
     }
   }
 
-  _allFiles = keep.slice();
+  // Dedup cached files by path (overlapping/recursive folders can share files).
+  _allFiles = dedupByPath(keep);
   applyFilters(); // render cached results immediately
 
   if (toScan.length === 0) {
@@ -582,44 +656,88 @@ async function loadAndScan(forceAll) {
 }
 
 async function runScan(toScan) {
-  const paths = toScan.map(t => t.path);
-  const mtimeByFolder = new Map(toScan.map(t => [t.path, t.mtime]));
-  const collected = [];
-
   setStatus(t('gallery.scanning'));
 
+  // Group folders by their recursive flag — the backend takes a single
+  // `recursive` flag per scan call, so recursive and non-recursive folders
+  // must be scanned in separate passes.
+  const groups = new Map();  // recursive(bool) → [toScan entry]
+  for (const entry of toScan) {
+    const key = entry.recursive !== false;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(entry);
+  }
+
   try {
-    _scanRequestId = await window.api.scanFolders(
-      { folders: paths, recursive: true },
-      (entry) => {
-        if (entry.type === 'file') {
-          collected.push(entry);
-        } else if (entry.type === 'done') {
-          _scanRequestId = null;
-          // Bucket collected files per scanned folder → update cache
-          const cache = window.store.get('scanCache', {}) || {};
-          for (const t of toScan) {
-            const bucket = collected.filter(f => belongsTo(f.path, t.path));
-            cache[t.path] = {
-              files: bucket,
-              scannedAt: Date.now(),
-              dirMtime: mtimeByFolder.get(t.path),
-            };
+    for (const [recursive, group] of groups) {
+      const paths = group.map(g => g.path);
+      const mtimeByFolder = new Map(group.map(g => [g.path, g.mtime]));
+      const collected = [];
+
+      await new Promise((resolve) => {
+        window.api.scanFolders(
+          { folders: paths, recursive },
+          (entry) => {
+            if (entry.type === 'file') {
+              collected.push(entry);
+            } else if (entry.type === 'done') {
+              _scanRequestId = null;
+              // Bucket collected files per scanned folder → update cache.
+              // With recursion + nested folders a file may match several
+              // folders; bucket it into the LONGEST matching folder path so
+              // each file is cached under exactly one folder (no double-count).
+              const cache = window.store.get('scanCache', {}) || {};
+              for (const g of group) {
+                const bucket = collected.filter(f =>
+                  belongsTo(f.path, g.path) && longestOwner(f.path, group) === g.path);
+                cache[g.path] = {
+                  files: bucket,
+                  scannedAt: Date.now(),
+                  dirMtime: mtimeByFolder.get(g.path),
+                  recursive,
+                };
+              }
+              window.store.set('scanCache', cache);
+              // Merge: drop previous files from these folders, add fresh (deduped).
+              _allFiles = _allFiles.filter(f => !group.some(g => belongsTo(f.path, g.path)));
+              _allFiles.push(...collected);
+              _allFiles = dedupByPath(_allFiles);
+              setStatus(t('gallery.filesFound', { n: _allFiles.length }));
+              applyFilters();
+              loadThumbnails();
+              resolve();
+            }
           }
-          window.store.set('scanCache', cache);
-          // Merge: drop previous files from scanned folders, add fresh
-          _allFiles = _allFiles.filter(f => !toScan.some(t => belongsTo(f.path, t.path)));
-          _allFiles.push(...collected);
-          setStatus(t('gallery.filesFound', { n: _allFiles.length }));
-          applyFilters();
-          loadThumbnails();
-        }
-      }
-    );
+        ).then(id => { _scanRequestId = id; }).catch(() => resolve());
+      });
+    }
   } catch (err) {
     console.error('Gallery scan error:', err);
     setStatus('Scan failed');
   }
+}
+
+/** Remove duplicate file entries by absolute path (keeps first occurrence). */
+function dedupByPath(files) {
+  const seen = new Set();
+  const out = [];
+  for (const f of files) {
+    if (seen.has(f.path)) continue;
+    seen.add(f.path);
+    out.push(f);
+  }
+  return out;
+}
+
+/** Among the given folders, the longest path that contains `filePath`. */
+function longestOwner(filePath, group) {
+  let best = null, bestLen = -1;
+  for (const g of group) {
+    if (belongsTo(filePath, g.path) && g.path.length > bestLen) {
+      best = g.path; bestLen = g.path.length;
+    }
+  }
+  return best;
 }
 
 function setStatus(text) {
@@ -670,6 +788,12 @@ async function loadThumbnails() {
  * ------------------------------------------------------------------ */
 function applyFilters() {
   let result = _allFiles.slice();
+
+  // Active source-folder filter: restrict to files under the selected folder.
+  if (_activeFolderId) {
+    const folder = _managedFolders.find(f => f.id === _activeFolderId);
+    if (folder) result = result.filter(f => belongsTo(f.path, folder.path));
+  }
 
   if (_activeExtFilter) result = result.filter(f => f.ext === _activeExtFilter);
 
@@ -927,7 +1051,13 @@ function wireEvents() {
   const folderList = document.getElementById('gv-folder-list');
   folderList?.addEventListener('click', (e) => {
     const rm = e.target.closest('.gv-folder-remove');
-    if (rm) { removeFolder(rm.dataset.id); return; }
+    if (rm) { e.stopPropagation(); removeFolder(rm.dataset.id); return; }
+    const rec = e.target.closest('.gv-folder-rec');
+    if (rec) { e.stopPropagation(); toggleFolderRecursive(rec.dataset.id); return; }
+    // Otherwise: select this folder as the active source filter.
+    const item = e.target.closest('.gv-folder-item');
+    if (!item) return;
+    setActiveFolder(item.dataset.id === '__all__' ? null : item.dataset.id);
   }, { signal: sig });
   folderList?.addEventListener('dblclick', (e) => {
     const label = e.target.closest('.gv-folder-label');

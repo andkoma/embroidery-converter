@@ -862,7 +862,8 @@ function syncRefreshBtn() {
 }
 
 function persistFolders() {
-  window.api.setSettings({ managedFolders: _folders }).catch(() => {});
+  // Batch keeps its OWN folder set, independent from the Gallery inventory.
+  window.api.setSettings({ batchFolders: _folders }).catch(() => {});
 }
 
 /** Inline-edit a folder's display alias (double-click on the label). */
@@ -1261,7 +1262,9 @@ async function mount(container, store) {
 
   // Load persisted folders from settings, then scan
   window.api.getSettings().then(s => {
-    const saved = s && s.managedFolders;
+    // Batch uses its own independent folder set (falls back to legacy
+    // managedFolders once, for users upgrading from the shared model).
+    const saved = s && (s.batchFolders || s.managedFolders);
     if (Array.isArray(saved) && saved.length > 0) {
       _folders = saved.map(f =>
         typeof f === 'string'

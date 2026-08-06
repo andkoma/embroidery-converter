@@ -120,6 +120,7 @@ const initialState = {
     language: 'en',
     theme: 'light',
     managedFolders: [],
+    batchFolders: [],
     recentOutputDirs: [],
     gallery: {
       typeFilter: ['pes', 'dst', 'jef', 'vp3', 'hus', 'xxx', 'exp'],
