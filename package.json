@@ -61,7 +61,7 @@
       "category": "public.app-category.graphics-design",
       "hardenedRuntime": false,
       "gatekeeperAssess": false,
-      "sign": null,
+      "sign": "-",
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist"
     },
