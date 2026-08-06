@@ -101,7 +101,7 @@ class Store {
  */
 const initialState = {
   // Current view
-  currentView: 'convert',
+  currentView: 'files',
 
   // Backend status
   backend: {

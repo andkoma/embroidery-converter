@@ -7,7 +7,7 @@
  *  - Bootstrap the store, router, and navigation rail
  *  - Own backend-status probe (updates topbar badge + store)
  *  - Own language selection (persists to localStorage + store)
- *  - Load & navigate to the initial view (Convert)
+ *  - Load & navigate to the initial view (Files)
  */
 'use strict';
 
@@ -136,7 +136,7 @@
   /* ---------------------------------------------------------------- *
    *  Navigation helper (handles lazy loading)
    * ---------------------------------------------------------------- */
-  const IMPLEMENTED_VIEWS = ['convert', 'batch', 'gallery', 'collections', 'projects', 'simulator', 'transfer', 'settings']; // extend as phases are built
+  const IMPLEMENTED_VIEWS = ['files', 'batch', 'gallery', 'collections', 'projects', 'simulator', 'transfer', 'settings']; // extend as phases are built
 
   async function navigateTo(viewId) {
     if (!IMPLEMENTED_VIEWS.includes(viewId)) {
@@ -196,8 +196,8 @@
   });
 
   /* ---------------------------------------------------------------- *
-   *  Boot into Convert view
+   *  Boot into Files view
    * ---------------------------------------------------------------- */
-  await navigateTo('convert');
+  await navigateTo('files');
 
 })();

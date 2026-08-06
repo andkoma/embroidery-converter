@@ -268,11 +268,11 @@ def main():
         page = browser.new_page(viewport=VIEWPORT, device_scale_factor=2)
         page.add_init_script(init_script(data))
         page.goto(index_url)
-        # Shell boots into Convert automatically.
+        # Shell boots into Files view automatically.
         page.wait_for_selector(".nav-item", timeout=8000)
         page.wait_for_timeout(800)
 
-        # ---- Convert: populate via the Browse button (openFiles stub) ----
+        # ---- Files: populate via the Browse button (openFiles stub) ----
         page.wait_for_selector("#cv-browseBtn", timeout=5000)
         page.click("#cv-browseBtn")
         page.wait_for_timeout(1200)

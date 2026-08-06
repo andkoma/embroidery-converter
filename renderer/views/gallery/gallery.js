@@ -980,7 +980,7 @@ function wireEvents() {
     else if (action === 'convert') {
       window.events && window.events.emit('gallery:send-to-convert', { file: _selected });
       closeDetail();
-      window.router && window.router.load('convert');
+      window.router && window.router.load('files');
     } else if (action === 'batch') {
       window.store.set('batchQueue', [_selected.path]);
       closeDetail();

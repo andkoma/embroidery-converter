@@ -1,17 +1,15 @@
 /**
- * Embroidery Converter - Convert View Module
+ * Embroidery Converter - Files View Module
  * Copyright © 2026 orgware.ai (andkoma@akopp.de)
  * This application was created with AI support.
  *
- * Self-contained view module for the single-file conversion screen.
+ * Multi-function file panel: conversion, preview (Simulator modal),
+ * and later additional file operations.
  * Implements the view contract: mount(container, store) + unmount().
- *
- * Behaviour is identical to the original renderer.js — this is a
- * structural migration, not a feature change.
  */
 'use strict';
 
-const ConvertView = (() => {
+const FilesView = (() => {
 
   /* ---------------------------------------------------------------- *
    *  Constants
@@ -852,4 +850,4 @@ const ConvertView = (() => {
 })();
 
 // Register with shell router
-window.registerView('convert', ConvertView);
+window.registerView('files', FilesView);
