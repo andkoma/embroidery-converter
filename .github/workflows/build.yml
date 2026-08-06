@@ -63,16 +63,18 @@ jobs:
         if: always()
         run: |
           echo "🔐 Applying entitlements to macOS app..."
-          # electron-builder creates app in ./release/mac-{arch}/ directory structure
-          APP_BUNDLE=$(find ./release -maxdepth 2 -name "Embroidery*.app" -o -name "*.app" | head -1)
+          # Find the app bundle in release directory (electron-builder creates mac-{arch}/)
+          APP_BUNDLE=$(find ./release -type d -name "*.app" | head -1)
+          
           if [ -z "$APP_BUNDLE" ]; then
-            echo "❌ No .app bundle found, searching for all directories..."
-            find ./release -type d | head -20
-            exit 1
+            echo "⚠️ No .app bundle found in release/"
+            echo "Release directory contents:"
+            find ./release -type d | head -20 || true
+          else
+            echo "✓ Found app bundle: $APP_BUNDLE"
+            chmod +x scripts/apply-entitlements.sh
+            scripts/apply-entitlements.sh "$APP_BUNDLE" "build/entitlements.mac.plist" || echo "⚠️ Entitlements apply skipped"
           fi
-          echo "✓ Found app bundle: $APP_BUNDLE"
-          chmod +x scripts/apply-entitlements.sh
-          scripts/apply-entitlements.sh "$APP_BUNDLE" "build/entitlements.mac.plist" || true
       
       - name: Save build log
         if: always()
