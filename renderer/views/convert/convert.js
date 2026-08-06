@@ -38,6 +38,8 @@ const ConvertView = (() => {
   let _outputDir  = '';
   let _baseAspect = null;
   let _abortCtrl  = null;     // AbortController for event cleanup
+  let _selectedId = null;     // id of the currently selected/active file
+  let _simModal   = null;     // { overlay, module } when the simulator modal is open
 
   // DOM refs (populated in mount)
   let dropZone, fileListEl, emptyState, fileCountEl,
@@ -46,7 +48,8 @@ const ConvertView = (() => {
       limitColorsToggle, colorLimit, colorLimitField,
       paletteEl, colorHint,
       outputDirEl, convertBtn,
-      progressWrap, progressFill, progressText;
+      progressWrap, progressFill, progressText,
+      selectedBanner;
 
   /* ---------------------------------------------------------------- *
    *  i18n helpers (delegates to shell-level I18N)
@@ -118,6 +121,8 @@ const ConvertView = (() => {
 
         <!-- Right: options panels -->
         <aside class="right">
+          <div id="cv-selectedBanner" class="selected-file-banner" data-i18n="convert.selectFileHint">Select a file to view its details</div>
+
           <div class="panel">
             <h3 class="panel-title" data-i18n="out.format">Output format</h3>
             <select id="cv-outputFormat" class="select"></select>
@@ -222,6 +227,7 @@ const ConvertView = (() => {
     progressWrap      = q('cv-progressWrap');
     progressFill      = q('cv-progressFill');
     progressText      = q('cv-progressText');
+    selectedBanner    = q('cv-selectedBanner');
   }
 
   /* ---------------------------------------------------------------- *
@@ -340,9 +346,27 @@ const ConvertView = (() => {
       const file = { id: _seq++, path: p, name, ext, meta: null, threads: [], preview: null,
                      status: 'pending', result: null };
       _files.push(file);
+      if (_selectedId === null) _selectedId = file.id;
       render();
       inspectFile(file);
     }
+  }
+
+  /**
+   * Make `id` the active/selected file: the right sidebar (resize + palette)
+   * and the selected-file banner all follow the current selection.
+   */
+  function selectFile(id) {
+    if (_selectedId === id) return;
+    _selectedId = id;
+    // Reset any manual size overrides so placeholders reflect the new file.
+    widthMm.value = ''; heightMm.value = '';
+    refreshReference();
+    render();
+  }
+
+  function selectedFile() {
+    return _files.find(f => f.id === _selectedId) || null;
   }
 
   async function inspectFile(file) {
@@ -365,29 +389,58 @@ const ConvertView = (() => {
     render();
   }
 
+  /**
+   * Sync the right sidebar (aspect ratio, size placeholders, palette) and the
+   * selected-file banner to the currently selected file. Falls back to the
+   * first readable file when the selection has no metadata yet.
+   */
   function refreshReference() {
-    const ref = _files.find(f => f.meta && f.meta.width > 0 && f.meta.height > 0);
+    // Prefer the selected file if it has usable metadata, else first readable.
+    const sel = selectedFile();
+    let ref = (sel && sel.meta && sel.meta.width > 0 && sel.meta.height > 0) ? sel : null;
+    if (!ref) ref = _files.find(f => f.meta && f.meta.width > 0 && f.meta.height > 0) || null;
+
     if (ref) {
       _baseAspect = ref.meta.width / ref.meta.height;
       if (!widthMm.value && !heightMm.value) {
         widthMm.placeholder  = ref.meta.width.toFixed(1);
         heightMm.placeholder = ref.meta.height.toFixed(1);
       }
-      const wt = _files.find(f => f.threads && f.threads.length);
-      renderPalette(wt ? wt.threads : []);
+      renderPalette(ref.threads && ref.threads.length ? ref.threads : []);
     } else {
+      _baseAspect = null;
+      widthMm.placeholder  = t('resize.auto');
+      heightMm.placeholder = t('resize.auto');
       renderPalette([]);
+    }
+    updateSelectedBanner();
+  }
+
+  function updateSelectedBanner() {
+    if (!selectedBanner) return;
+    const sel = selectedFile();
+    if (sel) {
+      selectedBanner.innerHTML = t('convert.selectedFile', { name: '<strong></strong>' });
+      const strong = selectedBanner.querySelector('strong');
+      if (strong) strong.textContent = sel.name; // safe (no HTML injection from file name)
+    } else {
+      selectedBanner.textContent = t('convert.selectFileHint');
     }
   }
 
   function removeFile(id) {
+    const wasSelected = _selectedId === id;
     _files = _files.filter(f => f.id !== id);
+    if (wasSelected) {
+      _selectedId = _files.length ? _files[0].id : null;
+      widthMm.value = ''; heightMm.value = '';
+    }
     refreshReference();
     render();
   }
 
   function clearAll() {
-    _files = []; _baseAspect = null;
+    _files = []; _baseAspect = null; _selectedId = null;
     widthMm.value = ''; heightMm.value = '';
     renderPalette([]);
     render();
@@ -595,7 +648,15 @@ const ConvertView = (() => {
 
     for (const file of _files) {
       const li   = document.createElement('li');
-      li.className = 'file-item';
+      li.className = 'file-item' + (file.id === _selectedId ? ' selected' : '');
+      li.tabIndex = 0;
+      li.setAttribute('role', 'button');
+      li.setAttribute('aria-pressed', file.id === _selectedId ? 'true' : 'false');
+      // Click anywhere on the row (except the action buttons) selects the file.
+      li.addEventListener('click', () => selectFile(file.id));
+      li.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectFile(file.id); }
+      });
 
       // Thumbnail
       const thumb = document.createElement('div');
@@ -622,24 +683,139 @@ const ConvertView = (() => {
       meta.className = 'file-meta'; meta.textContent = metaText(file);
       main.appendChild(name); main.appendChild(meta);
 
+      // Per-file actions: open in Simulator + remove
+      const actions = document.createElement('div');
+      actions.className = 'file-actions';
+
+      const simBtn = document.createElement('button');
+      simBtn.className = 'sim-btn';
+      simBtn.type = 'button';
+      simBtn.title = t('convert.openInSimulator');
+      simBtn.setAttribute('aria-label', t('convert.openInSimulator'));
+      // Play-in-circle icon (matches the Simulator nav concept)
+      simBtn.innerHTML =
+        '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" ' +
+        'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">' +
+        '<circle cx="12" cy="12" r="9"/><path d="M10 9l5 3-5 3z" fill="currentColor" stroke="none"/></svg>';
+      // Only enable once the file has been successfully inspected (has preview data).
+      simBtn.disabled = !file.meta || file.status === 'error';
+      if (simBtn.disabled) simBtn.style.opacity = '0.4';
+      simBtn.addEventListener('click', e => {
+        e.stopPropagation();               // don't trigger row selection
+        selectFile(file.id);
+        openSimulator(file);
+      });
+      actions.appendChild(simBtn);
+
       const remove = document.createElement('button');
       remove.className = 'remove-btn'; remove.innerHTML = '&times;';
       remove.title = t('status.remove');
-      remove.addEventListener('click', () => removeFile(file.id));
+      remove.addEventListener('click', e => { e.stopPropagation(); removeFile(file.id); });
+      actions.appendChild(remove);
 
       li.appendChild(thumb); li.appendChild(main);
-      li.appendChild(statusNode(file)); li.appendChild(remove);
+      li.appendChild(statusNode(file)); li.appendChild(actions);
       fileListEl.appendChild(li);
     }
 
     outputDirEl.value = _outputDir || '';
     updateConvertButton();
     updateColorHint();
+    updateSelectedBanner();
   }
 
   function updateConvertButton() {
     if (!convertBtn) return;
     convertBtn.disabled = !(_files.some(f => f.meta) && _outputDir);
+  }
+
+  /* ---------------------------------------------------------------- *
+   *  Simulator modal (opens the Simulator view in an overlay so the
+   *  Convert context is preserved instead of navigating away)
+   * ---------------------------------------------------------------- */
+
+  /** Lazily load the simulator view script and return its registered module. */
+  async function loadSimulatorModule() {
+    const router = window.router;
+    if (router && router.views && router.views.has('simulator')) {
+      return router.views.get('simulator');
+    }
+    await new Promise((resolve, reject) => {
+      // Reuse the shell's dedup convention (data-view attribute).
+      if (document.querySelector('script[data-view="simulator"]')) {
+        // Script tag exists but may still be loading — poll for registration.
+        const started = Date.now();
+        const check = () => {
+          if (window.router && window.router.views && window.router.views.has('simulator')) return resolve();
+          if (Date.now() - started > 5000) return reject(new Error('Simulator view failed to register'));
+          setTimeout(check, 40);
+        };
+        return check();
+      }
+      const s = document.createElement('script');
+      s.src = 'views/simulator/simulator.js';
+      s.setAttribute('data-view', 'simulator');
+      s.onload  = () => resolve();
+      s.onerror = () => reject(new Error('Failed to load simulator script'));
+      document.body.appendChild(s);
+    });
+    return (window.router && window.router.views && window.router.views.get('simulator')) || null;
+  }
+
+  async function openSimulator(file) {
+    if (!file || !file.meta) return;
+    if (_simModal) closeSimulator();   // only one modal at a time
+
+    const overlay = document.createElement('div');
+    overlay.className = 'cv-modal-overlay';
+    overlay.innerHTML = `
+      <div class="cv-modal" role="dialog" aria-modal="true">
+        <div class="cv-modal-header">
+          <h3 class="cv-modal-title"></h3>
+          <button class="cv-modal-close" type="button" aria-label="">&times;</button>
+        </div>
+        <div class="cv-modal-body"></div>
+      </div>`;
+    overlay.querySelector('.cv-modal-title').textContent = t('convert.simulatorTitle', { name: file.name });
+    const closeBtn = overlay.querySelector('.cv-modal-close');
+    closeBtn.title = t('convert.close');
+    closeBtn.setAttribute('aria-label', t('convert.close'));
+
+    const body = overlay.querySelector('.cv-modal-body');
+    document.body.appendChild(overlay);
+    _simModal = { overlay, module: null };
+
+    // Backdrop click + Escape close the modal.
+    overlay.addEventListener('mousedown', e => { if (e.target === overlay) closeSimulator(); });
+    const onKey = e => { if (e.key === 'Escape') closeSimulator(); };
+    document.addEventListener('keydown', onKey);
+    _simModal.onKey = onKey;
+    closeBtn.addEventListener('click', closeSimulator);
+
+    try {
+      const module = await loadSimulatorModule();
+      if (!_simModal || _simModal.overlay !== overlay) return; // closed while loading
+      if (!module || typeof module.mount !== 'function') {
+        body.innerHTML = '<div style="padding:40px;text-align:center;color:var(--error)">Simulator unavailable</div>';
+        return;
+      }
+      _simModal.module = module;
+      await module.mount(body, _store);
+      // Hand the selected file to the simulator via its existing hand-off channel.
+      if (window.events) window.events.emit('gallery:send-to-simulator', { file: { path: file.path, name: file.name } });
+    } catch (err) {
+      body.innerHTML = '<div style="padding:40px;text-align:center;color:var(--error)">' +
+                       (err && err.message ? err.message : 'Simulator failed to load') + '</div>';
+    }
+  }
+
+  function closeSimulator() {
+    if (!_simModal) return;
+    const { overlay, module, onKey } = _simModal;
+    _simModal = null;
+    if (onKey) document.removeEventListener('keydown', onKey);
+    try { if (module && typeof module.unmount === 'function') module.unmount(); } catch (e) { /* ignore */ }
+    if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
   }
 
   /* ---------------------------------------------------------------- *
@@ -651,6 +827,8 @@ const ConvertView = (() => {
     _files     = [];
     _seq       = 1;
     _baseAspect = null;
+    _selectedId = null;
+    _simModal   = null;
     _abortCtrl  = new AbortController();
 
     container.innerHTML = buildHTML();
@@ -661,6 +839,8 @@ const ConvertView = (() => {
   }
 
   function unmount() {
+    // Close the simulator modal (and unmount its view) if still open
+    closeSimulator();
     // Cancel all event listeners registered with this AbortController
     if (_abortCtrl) { _abortCtrl.abort(); _abortCtrl = null; }
     _container = null;
