@@ -18,7 +18,7 @@
     "python:bundle": "pyinstaller --onefile --distpath ./pybuild/dist --workpath ./pybuild/build --specpath ./pybuild --name convert --paths scripts/vendor --collect-submodules pyembroidery scripts/convert.py"
   },
   "devDependencies": {
-    "electron": "^31.0.0",
+    "electron": "^31.7.7",
     "electron-builder": "^24.13.3"
   },
   "build": {
@@ -32,7 +32,7 @@
     "files": [
       "main.js",
       "preload.js",
-      "main/**/*",
+      "main",
       "renderer/**/*",
       "assets/**/*",
       "!**/*.md",
@@ -48,7 +48,9 @@
     "afterPack": "scripts/afterSign.js",
     "afterSign": null,
     "win": {
-      "target": ["nsis"],
+      "target": [
+        "nsis"
+      ],
       "icon": "assets/icon.ico"
     },
     "nsis": {
@@ -58,7 +60,9 @@
       "createStartMenuShortcut": true
     },
     "mac": {
-      "target": ["dmg"],
+      "target": [
+        "dmg"
+      ],
       "icon": "assets/icon.icns",
       "category": "public.app-category.graphics-design",
       "hardenedRuntime": false,
