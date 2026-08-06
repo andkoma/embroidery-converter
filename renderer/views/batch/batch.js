@@ -39,10 +39,46 @@ const SEP = (window.api && window.api.platform === 'win32') ? '\\' : '/';
 function bvSplitPath(p) { return String(p || '').split(/[\\/]+/).filter(Boolean); }
 function bvTailLabel(p) { const parts = bvSplitPath(p); return parts.slice(-2).join(SEP) || p; }
 function bvFolderLabel(f) { return (f.alias && f.alias.trim()) ? f.alias.trim() : bvTailLabel(f.path); }
+/**
+ * Canonicalise a path for prefix comparison. Strips trailing separators and
+ * collapses the macOS firmlink prefix (/private/tmp ↔ /tmp, /private/var ↔
+ * /var, …) so a folder added as "/tmp/x" still matches files the scanner
+ * reports as "/private/tmp/x". Without this, symlink-prefix mismatches make
+ * the per-folder bucket empty and the scan cache restores nothing on the next
+ * visit to the Batch view.
+ */
+function bvCanon(p) {
+  let s = String(p || '').replace(/[\\/]+$/, '');
+  s = s.replace(/^\/private\/(tmp|var|etc)(\/|$)/, '/$1$2');
+  return s;
+}
 function bvBelongsTo(filePath, folderPath) {
-  const a = String(filePath || ''), b = String(folderPath || '');
-  return a === b || a.startsWith(b + '/') || a.startsWith(b + '\\') ||
-         a.startsWith(b.endsWith(SEP) ? b : b + SEP);
+  const a = bvCanon(filePath), b = bvCanon(folderPath);
+  return a === b || a.startsWith(b + '/') || a.startsWith(b + '\\');
+}
+/**
+ * Distribute freshly-scanned files into per-folder buckets, robust to
+ * symlink/prefix mismatches. Each file is assigned to the scan folder with
+ * the LONGEST matching canonical prefix. As a safety net, when only a single
+ * folder was scanned every file is assigned to it (no ambiguity possible).
+ * @returns {Map<string, object[]>} folderPath → files[]
+ */
+function bvBucket(files, folderPaths) {
+  const buckets = new Map(folderPaths.map(p => [p, []]));
+  const canons = folderPaths.map(p => ({ p, c: bvCanon(p) }));
+  const single = folderPaths.length === 1 ? folderPaths[0] : null;
+  for (const f of files) {
+    const fc = bvCanon(f.path);
+    let best = null, bestLen = -1;
+    for (const { p, c } of canons) {
+      if ((fc === c || fc.startsWith(c + '/') || fc.startsWith(c + '\\')) && c.length > bestLen) {
+        best = p; bestLen = c.length;
+      }
+    }
+    if (!best) best = single;   // single-folder fallback
+    if (best) buckets.get(best).push(f);
+  }
+  return buckets;
 }
 function bvMkId() { return Date.now().toString(36) + Math.random().toString(36).slice(2); }
 
@@ -61,6 +97,12 @@ let _search    = '';
 let _extFilter = new Set();  // active ext filter; empty = all exts shown
 let _scanReqId = null;
 let _scanning  = false;
+
+let _viewMode  = 'list';     // 'list' | 'card' (persisted in localStorage)
+let _thumbReqId = null;      // active thumbnail-stream request id
+let _tagsByPath = {};        // path → string[]  (AI vision auto-tagging groundwork)
+
+const BV_VIEW_KEY = 'ec_batch_view';
 
 /* ------------------------------------------------------------------ *
  *  HTML template
@@ -113,9 +155,26 @@ function buildHTML() {
         </div>
         <span id="bv-scan-status" class="bv-scan-status"></span>
         <span id="bv-file-count" class="bv-file-count">0 files</span>
+        <div class="bv-view-toggle">
+          <button id="bv-view-list" class="bv-view-btn active" title="">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+                 stroke-linecap="round" stroke-linejoin="round">
+              <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/>
+              <line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/>
+              <line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
+            </svg>
+          </button>
+          <button id="bv-view-card" class="bv-view-btn" title="">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+                 stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+              <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
+            </svg>
+          </button>
+        </div>
       </div>
       <div id="bv-ext-chips" class="bv-ext-chips">${chips}</div>
-      <div class="bv-col-head">
+      <div class="bv-col-head" id="bv-col-head">
         <label class="bv-col-check">
           <input type="checkbox" id="bv-select-all"/>
         </label>
@@ -128,6 +187,7 @@ function buildHTML() {
 
     <div id="bv-table-scroll" class="bv-table-scroll">
       <div id="bv-table-rows" class="bv-table-rows"></div>
+      <div id="bv-card-grid" class="bv-card-grid" hidden></div>
     </div>
 
     <div class="bv-table-footer">
@@ -446,6 +506,62 @@ function injectStyles() {
 .bv-check-label input { cursor: pointer; }
 .bv-mono { font-family: monospace; font-size: 11px; color: var(--muted,#6b7a99); }
 
+/* ── View toggle ── */
+.bv-view-toggle { display: flex; gap: 2px; flex-shrink: 0; }
+.bv-view-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 26px; height: 24px; padding: 0;
+  border: 1px solid var(--border, #dde1ef); border-radius: 6px;
+  background: var(--input-bg, #fff); color: var(--muted, #6b7a99); cursor: pointer;
+  transition: background .12s, border-color .12s, color .12s;
+}
+.bv-view-btn svg { width: 14px; height: 14px; }
+.bv-view-btn:hover { border-color: var(--accent, #4a6ef5); color: var(--accent, #4a6ef5); }
+.bv-view-btn.active { background: var(--accent, #4a6ef5); border-color: var(--accent, #4a6ef5); color: #fff; }
+
+/* ── Card grid ── */
+.bv-card-grid {
+  display: grid; gap: 10px; padding: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  align-content: start;
+}
+.bv-card {
+  position: relative; display: flex; flex-direction: column;
+  border: 1px solid var(--border, #e2e6ef); border-radius: 9px;
+  background: var(--panel-bg, #fff); overflow: hidden; cursor: pointer;
+  transition: border-color .12s, box-shadow .12s;
+}
+.bv-card:hover { border-color: var(--accent, #4a6ef5); box-shadow: 0 2px 10px rgba(74,110,245,.12); }
+.bv-card.bv-selected { border-color: var(--accent, #4a6ef5); box-shadow: 0 0 0 1px var(--accent, #4a6ef5) inset; }
+.bv-card-check {
+  position: absolute; top: 7px; left: 7px; z-index: 2; cursor: pointer;
+  width: 15px; height: 15px;
+}
+.bv-card-thumb {
+  height: 108px; display: flex; align-items: center; justify-content: center;
+  background: var(--surface, #f4f6fb); border-bottom: 1px solid var(--row-border, #f0f2f8);
+  padding: 6px; box-sizing: border-box;
+}
+.bv-card-thumb svg { max-width: 100%; max-height: 100%; }
+.bv-card-thumb-ph { font-size: 10px; color: var(--muted, #9aa6bf); }
+.bv-card-body { padding: 7px 9px 9px; display: flex; flex-direction: column; gap: 4px; }
+.bv-card-name {
+  font-size: 12px; color: var(--text, #1a2340); font-weight: 500;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.bv-card-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.bv-card-badge {
+  font-family: monospace; font-size: 10px; padding: 1px 5px; border-radius: 4px;
+  background: var(--chip-bg, #eef1f8); color: var(--muted, #5a6380);
+}
+.bv-card-size { font-size: 10px; color: var(--muted, #6b7a99); }
+.bv-card-status { margin-left: auto; font-size: 11px; }
+.bv-card-tags { display: flex; flex-wrap: wrap; gap: 3px; }
+.bv-card-tag {
+  font-size: 9px; padding: 1px 5px; border-radius: 8px;
+  background: var(--accent-subtle, #eef1fd); color: var(--accent, #4a6ef5);
+}
+
 /* ── Scan spinner ── */
 @keyframes bv-spin { to { transform: rotate(360deg); } }
 .bv-spin { display: inline-block; animation: bv-spin .7s linear infinite; }
@@ -563,6 +679,137 @@ function statusIcon(s) {
   }
 }
 
+function escBv(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/* ------------------------------------------------------------------ *
+ *  View dispatch (list ⇆ card)
+ * ------------------------------------------------------------------ */
+function renderContent() {
+  const rowsEl = document.getElementById('bv-table-rows');
+  const gridEl = document.getElementById('bv-card-grid');
+  const colHead = document.getElementById('bv-col-head');
+  const card = _viewMode === 'card';
+  if (rowsEl) rowsEl.hidden = card;
+  if (gridEl) gridEl.hidden = !card;
+  if (colHead) colHead.style.display = card ? 'none' : '';
+  if (card) renderCards();
+  else      renderRows();
+}
+
+/** Virtual scroll only matters in list mode. */
+function onScroll() {
+  if (_viewMode !== 'card') renderRows();
+}
+
+/* ------------------------------------------------------------------ *
+ *  Card renderer (with cached vector thumbnails)
+ * ------------------------------------------------------------------ */
+function renderCards() {
+  const grid = document.getElementById('bv-card-grid');
+  if (!grid) return;
+
+  if (_filtered.length === 0) {
+    const msg = _folders.length === 0
+      ? t('batch.noFolders')
+      : _scanning ? t('batch.scanning') : t('batch.noFiles');
+    grid.innerHTML = `<div class="bv-empty-table">${escBv(msg)}</div>`;
+    return;
+  }
+
+  const frag = document.createDocumentFragment();
+  for (const f of _filtered) {
+    const sel = _selected.has(f.path);
+    const card = document.createElement('div');
+    card.className = 'bv-card' + (sel ? ' bv-selected' : '');
+    card.dataset.path = f.path;
+    const preview = f.preview
+      ? renderPreview(f.preview)
+      : `<span class="bv-card-thumb-ph">${escBv(t('preview.none'))}</span>`;
+    const tags = (_tagsByPath[f.path] || [])
+      .map(tag => `<span class="bv-card-tag">${escBv(tag)}</span>`).join('');
+    card.innerHTML = `
+      <input type="checkbox" class="bv-card-check"${sel ? ' checked' : ''} title="${escBv(f.path)}"/>
+      <div class="bv-card-thumb">${preview}</div>
+      <div class="bv-card-body">
+        <div class="bv-card-name" title="${escBv(f.path)}">${escBv(f.name)}</div>
+        <div class="bv-card-meta">
+          <span class="bv-card-badge">${escBv((f.ext || '').toUpperCase())}</span>
+          <span class="bv-card-size">${fmtSize(f.size)}</span>
+          <span class="bv-card-status bv-st-${f.status || 'pending'}">${statusIcon(f.status)}</span>
+        </div>
+        ${tags ? `<div class="bv-card-tags">${tags}</div>` : ''}
+      </div>
+    `;
+    frag.appendChild(card);
+  }
+  grid.replaceChildren(frag);
+}
+
+/** Render a vector preview (shared shape with Gallery's renderPreview). */
+function renderPreview(preview) {
+  if (!preview || !Array.isArray(preview.lines) || preview.lines.length === 0) {
+    return `<span class="bv-card-thumb-ph">${escBv(t('preview.none'))}</span>`;
+  }
+  const left = preview.left || 0, top = preview.top || 0;
+  const width = preview.width || 1, height = preview.height || 1;
+  const viewBox = `${left} ${top} ${width} ${height}`;
+  const strokeW = Math.max(Math.max(width, height) / 120, 0.4);
+  const paths = preview.lines.map(line => {
+    const pts = line.pts || [];
+    if (pts.length < 2) return '';
+    const d = pts.map((pt, i) => `${i === 0 ? 'M' : 'L'}${pt[0]},${pt[1]}`).join(' ');
+    return `<path d="${d}" stroke="${escBv(line.hex || '#888')}" fill="none" stroke-width="${strokeW.toFixed(2)}" stroke-linecap="round" stroke-linejoin="round"/>`;
+  }).join('');
+  return `<svg viewBox="${viewBox}" preserveAspectRatio="xMidYMid meet">${paths}</svg>`;
+}
+
+/* ------------------------------------------------------------------ *
+ *  Thumbnails — cached on disk via main (persistent, configurable dir)
+ *  Only requested lazily when the card view is active, to avoid the cost
+ *  when the user stays in the (default) list view.
+ * ------------------------------------------------------------------ */
+function loadThumbnails() {
+  if (_viewMode !== 'card') return;
+  const need = _allFiles.filter(f => !f.preview && !f._thumbTried);
+  if (need.length === 0) return;
+  const items = need.map(f => ({ path: f.path, mtime: f.mtime }));
+  const byPath = new Map(_allFiles.map(f => [f.path, f]));
+
+  window.api.getThumbsCached(items, (entry) => {
+    if (entry.type === 'thumb') {
+      const f = byPath.get(entry.path);
+      if (f) {
+        f._thumbTried = true;
+        f.preview = entry.preview || null;
+        const m = entry.meta || {};
+        f.stitches = m.stitch_count;
+        f.colors   = m.color_count;
+        f.width    = m.width_mm;
+        f.height   = m.height_mm;
+      }
+    } else if (entry.type === 'done') {
+      _thumbReqId = null;
+      need.forEach(f => { f._thumbTried = true; });
+      if (_viewMode === 'card') renderCards();
+    }
+  }).then(id => { _thumbReqId = id; }).catch(err => {
+    console.error('Batch thumbnail error:', err);
+  });
+}
+
+function setViewMode(mode) {
+  _viewMode = (mode === 'card') ? 'card' : 'list';
+  try { localStorage.setItem(BV_VIEW_KEY, _viewMode); } catch (_) {}
+  document.getElementById('bv-view-card')?.classList.toggle('active', _viewMode === 'card');
+  document.getElementById('bv-view-list')?.classList.toggle('active', _viewMode === 'list');
+  renderContent();
+  loadThumbnails();
+}
+
 /* ------------------------------------------------------------------ *
  *  Folder list renderer
  * ------------------------------------------------------------------ */
@@ -668,7 +915,7 @@ async function startScan(forceAll) {
     _scanning  = false;
     _allFiles  = [];
     applyFilter();
-    renderRows();
+    renderContent();
     updateCounts();
     setScanStatus('');
     return;
@@ -697,7 +944,7 @@ async function startScan(forceAll) {
   if (toScan.length === 0) {
     _scanning = false;
     setScanStatus('');
-    applyFilter(); renderRows(); updateCounts();
+    applyFilter(); renderContent(); updateCounts(); loadThumbnails();
     return;
   }
 
@@ -717,7 +964,7 @@ async function startScan(forceAll) {
       // Throttle re-renders: every 100 new files
       if (_allFiles.length - lastRenderCount >= 100) {
         lastRenderCount = _allFiles.length;
-        applyFilter(); renderRows(); updateCounts();
+        applyFilter(); renderContent(); updateCounts();
       }
     } else if (data.type === 'error' && data.path === undefined) {
       setScanStatus('Error: ' + (data.message || 'scan failed'));
@@ -725,17 +972,20 @@ async function startScan(forceAll) {
       _scanning  = false;
       _scanReqId = null;
       setScanStatus('');
-      // Update cache: bucket freshly-collected files per scanned folder
+      // Update cache: bucket freshly-collected files per scanned folder using
+      // the symlink-robust bucketer so no folder ends up with an empty list
+      // (which previously caused the cache to restore nothing on the next visit).
       const c = window.store.get('scanCache', {}) || {};
+      const buckets = bvBucket(collected, toScan.map(t => t.path));
       for (const t of toScan) {
         c[t.path] = {
-          files: collected.filter(f => bvBelongsTo(f.path, t.path)),
+          files: buckets.get(t.path) || [],
           scannedAt: Date.now(),
           dirMtime: mtimeByFolder.get(t.path),
         };
       }
       window.store.set('scanCache', c);
-      applyFilter(); renderRows(); updateCounts();
+      applyFilter(); renderContent(); updateCounts(); loadThumbnails();
     }
   }).catch(err => {
     _scanning = false;
@@ -769,7 +1019,7 @@ async function runBatchConversion(files, profile) {
             file.message = data.message;
           }
           // Re-render to show updated status
-          renderRows();
+          renderContent();
         }
       } else if (data.type === 'done') {
         // Batch completed
@@ -815,8 +1065,14 @@ function wireEvents() {
   document.getElementById('bv-search')
     ?.addEventListener('input', e => {
       _search = e.target.value;
-      applyFilter(); renderRows(); updateCounts();
+      applyFilter(); renderContent(); updateCounts();
     }, { signal: sig });
+
+  // View toggle (list ⇆ card)
+  document.getElementById('bv-view-list')
+    ?.addEventListener('click', () => setViewMode('list'), { signal: sig });
+  document.getElementById('bv-view-card')
+    ?.addEventListener('click', () => setViewMode('card'), { signal: sig });
 
   document.getElementById('bv-ext-chips')
     ?.addEventListener('click', e => {
@@ -825,31 +1081,47 @@ function wireEvents() {
       const ext = chip.dataset.ext;
       if (_extFilter.has(ext)) { _extFilter.delete(ext); chip.classList.remove('active'); }
       else                     { _extFilter.add(ext);    chip.classList.add('active'); }
-      applyFilter(); renderRows(); updateCounts();
+      applyFilter(); renderContent(); updateCounts();
     }, { signal: sig });
 
   document.getElementById('bv-select-all')
     ?.addEventListener('change', e => {
       if (e.target.checked) { _filtered.forEach(f => _selected.add(f.path)); }
       else                  { _filtered.forEach(f => _selected.delete(f.path)); }
-      renderRows(); updateCounts();
+      renderContent(); updateCounts();
     }, { signal: sig });
 
-  // Row checkbox (delegated on scroll container)
+  // Selection checkbox (delegated on scroll container — works for both
+  // list rows and cards, which share the data-path attribute).
   document.getElementById('bv-table-scroll')
     ?.addEventListener('change', e => {
       if (e.target.type !== 'checkbox') return;
-      const row = e.target.closest('.bv-row');
-      if (!row) return;
-      const p = row.dataset.path;
-      if (e.target.checked) { _selected.add(p);    row.classList.add('bv-selected'); }
-      else                  { _selected.delete(p); row.classList.remove('bv-selected'); }
+      const el = e.target.closest('.bv-row, .bv-card');
+      if (!el) return;
+      const p = el.dataset.path;
+      if (e.target.checked) { _selected.add(p);    el.classList.add('bv-selected'); }
+      else                  { _selected.delete(p); el.classList.remove('bv-selected'); }
       updateCounts();
     }, { signal: sig });
 
-  // Virtual scroll
+  // Clicking anywhere on a card (except its checkbox) toggles selection.
+  document.getElementById('bv-card-grid')
+    ?.addEventListener('click', e => {
+      if (e.target.closest('.bv-card-check')) return; // checkbox handles itself
+      const card = e.target.closest('.bv-card');
+      if (!card) return;
+      const p = card.dataset.path;
+      const on = !_selected.has(p);
+      if (on) { _selected.add(p); card.classList.add('bv-selected'); }
+      else    { _selected.delete(p); card.classList.remove('bv-selected'); }
+      const cb = card.querySelector('.bv-card-check');
+      if (cb) cb.checked = on;
+      updateCounts();
+    }, { signal: sig });
+
+  // Virtual scroll (list mode only)
   document.getElementById('bv-table-scroll')
-    ?.addEventListener('scroll', renderRows, { signal: sig, passive: true });
+    ?.addEventListener('scroll', onScroll, { signal: sig, passive: true });
 
   // ── Profile panel ──
   document.getElementById('bv-out-dir-btn')
@@ -917,6 +1189,14 @@ function mount(container, store) {
   _extFilter = new Set();
   _scanReqId = null;
   _scanning  = false;
+  _thumbReqId = null;
+  _tagsByPath = window.store.get('batchTags', {}) || {};
+
+  // Restore persisted view mode
+  try {
+    const v = localStorage.getItem(BV_VIEW_KEY);
+    _viewMode = (v === 'card') ? 'card' : 'list';
+  } catch (_) { _viewMode = 'list'; }
 
   injectStyles();
   container.innerHTML = buildHTML();
@@ -925,12 +1205,18 @@ function mount(container, store) {
   // Set initial i18n text
   const convertBtn = document.getElementById('bv-convert-btn');
   if (convertBtn) convertBtn.textContent = t('batch.convertBtn');
-  
+
   const noFoldersMsg = document.getElementById('bv-no-folders-msg');
   if (noFoldersMsg) noFoldersMsg.innerHTML = t('batch.noFolders').replace('\n', '<br>');
 
+  // View-toggle button tooltips + active state
+  const listBtn = document.getElementById('bv-view-list');
+  const cardBtn = document.getElementById('bv-view-card');
+  if (listBtn) { listBtn.title = t('batch.viewList'); listBtn.classList.toggle('active', _viewMode === 'list'); }
+  if (cardBtn) { cardBtn.title = t('batch.viewCard'); cardBtn.classList.toggle('active', _viewMode === 'card'); }
+
   // Initial empty render (before settings load)
-  renderRows();
+  renderContent();
   updateCounts();
 
   // Consume any hand-off queue from Gallery ("Send to Batch")
@@ -961,6 +1247,10 @@ function unmount() {
   if (_scanReqId) {
     window.api.cancelStream(_scanReqId).catch(() => {});
     _scanReqId = null;
+  }
+  if (_thumbReqId) {
+    window.api.cancelStream(_thumbReqId).catch(() => {});
+    _thumbReqId = null;
   }
   if (_abortCtrl) {
     _abortCtrl.abort();

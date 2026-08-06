@@ -282,6 +282,15 @@ def main():
         page.click('.nav-item[data-view="batch"]')
         page.wait_for_timeout(1400)
         shoot(page, "02-batch.png")
+        # Card view with cached thumbnails
+        try:
+            page.click("#bv-view-card", timeout=3000)
+            page.wait_for_timeout(1400)
+            shoot(page, "02b-batch-card.png")
+            page.click("#bv-view-list", timeout=3000)
+            page.wait_for_timeout(300)
+        except Exception as e:
+            print("batch card view skipped:", e)
 
         # ---- Gallery: auto-scans galleryFolders + makeThumbs ----
         page.click('.nav-item[data-view="gallery"]')
