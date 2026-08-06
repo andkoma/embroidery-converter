@@ -522,51 +522,48 @@ const FilesView = (() => {
   }
 
   async function convertAll() {
-    if (!_files.length || !_outputDir) return;
+    // Convert ONLY the currently selected file (not all loaded files).
+    const file = selectedFile();
+    if (!file || !file.meta || !_outputDir) return;
     const fmt     = outputFormatEl.value;
     const options = buildOptions();
 
     convertBtn.disabled = true;
     progressWrap.classList.remove('hidden');
-    const pending = _files.filter(f => f.meta);
-    let done = 0;
 
-    for (const file of _files) {
-      if (!file.meta) continue;
-      file.status = 'converting';
-      file.result = null;
-      render();
-      progressText.textContent = t('progress.converting', { name: file.name });
+    file.status = 'converting';
+    file.result = null;
+    render();
+    progressText.textContent = t('progress.converting', { name: file.name });
+    progressFill.style.width = '0%';
 
-      const payload = {
-        input_path:    file.path,
-        output_path:   outputPathFor(file, fmt),
-        output_format: fmt,
-        options,
-      };
-      try {
-        const res = await window.api.convert(payload);
-        if (res && res.success) {
-          file.status = 'done';
-          file.result = res;
-          file.meta   = { stitches: res.stitch_count, colors: res.color_count,
-                          width: res.width_mm, height: res.height_mm };
-        } else {
-          file.status = 'error';
-          file.result = { error: (res && res.error) || 'Conversion failed' };
-        }
-      } catch (e) {
+    const payload = {
+      input_path:    file.path,
+      output_path:   outputPathFor(file, fmt),
+      output_format: fmt,
+      options,
+    };
+    try {
+      const res = await window.api.convert(payload);
+      if (res && res.success) {
+        file.status = 'done';
+        file.result = res;
+        file.meta   = { stitches: res.stitch_count, colors: res.color_count,
+                        width: res.width_mm, height: res.height_mm };
+      } else {
         file.status = 'error';
-        file.result = { error: e.message };
+        file.result = { error: (res && res.error) || 'Conversion failed' };
       }
-      done++;
-      progressFill.style.width = Math.round((done / Math.max(pending.length, 1)) * 100) + '%';
-      render();
+    } catch (e) {
+      file.status = 'error';
+      file.result = { error: e.message };
     }
+    progressFill.style.width = '100%';
+    render();
 
     progressText.textContent = t('progress.finished', {
-      ok:     _files.filter(f => f.status === 'done').length,
-      failed: _files.filter(f => f.status === 'error').length,
+      ok:     file.status === 'done'  ? 1 : 0,
+      failed: file.status === 'error' ? 1 : 0,
     });
     convertBtn.disabled = false;
     updateConvertButton();
@@ -724,7 +721,8 @@ const FilesView = (() => {
 
   function updateConvertButton() {
     if (!convertBtn) return;
-    convertBtn.disabled = !(_files.some(f => f.meta) && _outputDir);
+    const sel = selectedFile();
+    convertBtn.disabled = !(sel && sel.meta && _outputDir);
   }
 
   /* ---------------------------------------------------------------- *
