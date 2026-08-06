@@ -896,6 +896,7 @@ function openDetail(file) {
       </div>
       <div class="gv-modal-actions">
         <button class="gv-modal-btn" data-action="convert">${esc(t('gallery.detail.convert'))}</button>
+        <button class="gv-modal-btn secondary" data-action="simulator">${esc(t('gallery.detail.simulator'))}</button>
         <button class="gv-modal-btn secondary" data-action="batch">${esc(t('gallery.detail.addToBatch'))}</button>
         <button class="gv-modal-btn secondary" data-action="close">${esc(t('gallery.detail.close'))}</button>
       </div>
@@ -978,9 +979,16 @@ function wireEvents() {
     const action = btn.dataset.action;
     if (action === 'close' || action === '__close__') { closeDetail(); }
     else if (action === 'convert') {
-      window.events && window.events.emit('gallery:send-to-convert', { file: _selected });
+      // Hand off the selected file to the Files view via a store queue
+      // (robust across the navigation that follows; an event listener could
+      // fire before the Files view has mounted).
+      window.store.set('filesQueue', [_selected.path]);
       closeDetail();
       window.router && window.router.load('files');
+    } else if (action === 'simulator') {
+      window.store.set('simulatorQueue', _selected.path);
+      closeDetail();
+      window.router && window.router.load('simulator');
     } else if (action === 'batch') {
       window.store.set('batchQueue', [_selected.path]);
       closeDetail();

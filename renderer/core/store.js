@@ -142,6 +142,12 @@ const initialState = {
   // Batch hand-off queue — file paths marked in Gallery and sent to the Batch view.
   batchQueue: [],
 
+  // Files hand-off queue — file paths sent from Gallery ("Convert") to the Files view.
+  filesQueue: [],
+
+  // Simulator hand-off — single file path sent from Gallery ("Open in Simulator").
+  simulatorQueue: null,
+
   // Collections hand-off queue — files marked in Gallery and sent to the
   // Collections view. Each entry: { path, name, ext }.
   collectionsQueue: [],

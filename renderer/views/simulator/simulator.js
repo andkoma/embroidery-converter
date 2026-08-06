@@ -105,11 +105,19 @@ async function mount(container) {
   // Listen for Gallery hand-off
   window.events?.on('gallery:send-to-simulator', handleGalleryHandoff);
   
-  // Check if we have a file path in URL or state
-  const urlParams = new URLSearchParams(window.location.hash.substring(1));
-  const filePath = urlParams.get('file');
-  if (filePath) {
-    await loadFile(filePath);
+  // Consume a hand-off from Gallery ("Open in Simulator") — robust across
+  // the navigation that precedes mount (an event could fire too early).
+  const queued = window.store && window.store.get('simulatorQueue', null);
+  if (queued) {
+    window.store.set('simulatorQueue', null);
+    await loadFile(queued);
+  } else {
+    // Check if we have a file path in URL or state
+    const urlParams = new URLSearchParams(window.location.hash.substring(1));
+    const filePath = urlParams.get('file');
+    if (filePath) {
+      await loadFile(filePath);
+    }
   }
 }
 

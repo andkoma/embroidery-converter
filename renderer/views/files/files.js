@@ -832,6 +832,14 @@ const FilesView = (() => {
     applyI18n(container);
     bindEvents();
     await init();
+
+    // Consume a hand-off from Gallery ("Convert") — a list of file paths to
+    // load into the file selection. Robust across the preceding navigation.
+    const queued = (window.store && window.store.get('filesQueue', [])) || [];
+    if (Array.isArray(queued) && queued.length > 0) {
+      window.store.set('filesQueue', []);   // clear after consuming
+      await addFiles(queued);
+    }
   }
 
   function unmount() {
