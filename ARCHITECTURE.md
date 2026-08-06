@@ -464,7 +464,7 @@ Planned enhancements for production-quality visualization:
 - **.ecproj package format** is a plain ZIP archive (interop-verified with system `unzip -l/-t`) containing `manifest.json` (project metadata + tree structure), `assets/<assetId>.<ext>` (copied files), `previews/<assetId>.json` (embroidery/image previews)
 - **Copy-on-export** avoids file duplication during editing — assets stay in their original locations; only on export are they read and bundled into the .ecproj ZIP
 
-**Commits:** (to be added after git commit)
+**Commits:** ae56563 (Phase F — Projects panel)
 
 ---
 
