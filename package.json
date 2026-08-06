@@ -32,7 +32,8 @@
     "files": [
       "main.js",
       "preload.js",
-      "main",
+      "main/zip.js",
+      "main/logger.js",
       "renderer/**/*",
       "assets/**/*",
       "!**/*.md",
