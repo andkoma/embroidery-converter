@@ -44,6 +44,7 @@
       }
     ],
     "publish": null,
+    "afterSign": "scripts/afterSign.js",
     "afterPack": null,
     "win": {
       "target": ["nsis"],
@@ -61,7 +62,6 @@
       "category": "public.app-category.graphics-design",
       "hardenedRuntime": false,
       "gatekeeperAssess": false,
-      "sign": "-",
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist"
     },
