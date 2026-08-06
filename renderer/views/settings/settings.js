@@ -58,9 +58,19 @@ const TOPICS = [
   { id: 'folders',    key: 'settings.topic.folders',    icon: '📁' },
   { id: 'conversion', key: 'settings.topic.conversion', icon: '🔄' },
   { id: 'transfer',   key: 'settings.topic.transfer',   icon: '📤' },
+  { id: 'cache',      key: 'settings.topic.cache',      icon: '🗂️' },
   { id: 'ai',         key: 'settings.topic.ai',         icon: '✨' },
   { id: 'about',      key: 'settings.topic.about',      icon: 'ℹ️' },
 ];
+
+/** Human-readable byte size. */
+function fmtBytes(bytes) {
+  const n = Number(bytes) || 0;
+  if (n < 1024) return n + ' B';
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+  if (n < 1024 * 1024 * 1024) return (n / (1024 * 1024)).toFixed(1) + ' MB';
+  return (n / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+}
 
 /* ------------------------------------------------------------------ *
  *  Lifecycle
@@ -112,6 +122,9 @@ function normalize(s) {
   if (!('activeProviderId' in s.ai)) s.ai.activeProviderId = null;
   s.managedFolders = Array.isArray(s.managedFolders) ? s.managedFolders : [];
   s.transferFavorites = Array.isArray(s.transferFavorites) ? s.transferFavorites : [];
+  s.cache = s.cache || {};
+  if (typeof s.cache.dir !== 'string') s.cache.dir = '';
+  if (!Number.isFinite(Number(s.cache.maxSizeMB))) s.cache.maxSizeMB = 500;
   return s;
 }
 
@@ -169,6 +182,7 @@ function renderTopic() {
     case 'folders':    host.innerHTML = tplFolders();    wireFolders();    break;
     case 'conversion': host.innerHTML = tplConversion(); wireConversion(); break;
     case 'transfer':   host.innerHTML = tplTransfer();   wireTransfer();   break;
+    case 'cache':      host.innerHTML = tplCache();      wireCache();      break;
     case 'ai':         host.innerHTML = tplAI();         wireAI();         break;
     case 'about':      host.innerHTML = tplAbout();      wireAbout();      break;
   }
@@ -430,6 +444,102 @@ function wireTransfer() {
       renderTopic();
     }, { signal: sig });
   });
+}
+
+/* ================================================================== *
+ *  CACHE — persistent thumbnail / preview storage
+ * ================================================================== */
+function tplCache() {
+  const c = _settings.cache || { dir: '', maxSizeMB: 500 };
+  const customDir = (c.dir || '').trim();
+  return section(t('settings.topic.cache'), t('settings.cache.desc'), `
+    <div class="st-field">
+      <label class="st-field-label">${esc(t('settings.cache.location'))}</label>
+      <p class="st-field-hint">${esc(t('settings.cache.locationHint'))}</p>
+      <div class="st-cache-path-row">
+        <input type="text" id="st-cache-dir" class="st-input" readonly
+               value="${esc(customDir)}"
+               placeholder="${esc(t('settings.cache.defaultLabel'))}"
+               title="${esc(customDir)}"/>
+        <button id="st-cache-choose" class="st-btn-secondary">${esc(t('settings.cache.choose'))}</button>
+        <button id="st-cache-reset" class="st-btn-secondary" ${customDir ? '' : 'disabled'}>${esc(t('settings.cache.useDefault'))}</button>
+      </div>
+      <p class="st-cache-resolved" id="st-cache-resolved"></p>
+    </div>
+
+    <div class="st-field">
+      <label class="st-field-label" for="st-cache-max">${esc(t('settings.cache.maxSize'))}</label>
+      <p class="st-field-hint">${esc(t('settings.cache.maxSizeHint'))}</p>
+      <div class="st-cache-size-row">
+        <input type="number" id="st-cache-max" class="st-input st-input-narrow"
+               min="0" step="50" value="${esc(String(c.maxSizeMB))}"/>
+        <span class="st-unit">${esc(t('settings.cache.mbUnit'))}</span>
+      </div>
+    </div>
+
+    <div class="st-field">
+      <label class="st-field-label">${esc(t('settings.cache.usage'))}</label>
+      <div class="st-cache-usage" id="st-cache-usage">${esc(t('settings.cache.calculating'))}</div>
+      <button id="st-cache-clear" class="st-btn-danger">${esc(t('settings.cache.clear'))}</button>
+    </div>
+  `);
+}
+
+async function refreshCacheUsage() {
+  const usageEl = document.getElementById('st-cache-usage');
+  const resolvedEl = document.getElementById('st-cache-resolved');
+  if (!usageEl && !resolvedEl) return;
+  let info = null;
+  try { info = window.api.cacheInfo ? await window.api.cacheInfo() : null; } catch (_) {}
+  if (!info) {
+    if (usageEl) usageEl.textContent = t('settings.cache.unavailable');
+    return;
+  }
+  if (usageEl) {
+    usageEl.textContent = t('settings.cache.usageValue', {
+      size: fmtBytes(info.sizeBytes),
+      count: info.fileCount,
+    });
+  }
+  if (resolvedEl) {
+    resolvedEl.textContent = (info.isDefault ? t('settings.cache.defaultLabel') + ' — ' : '') + info.dir;
+  }
+}
+
+function wireCache() {
+  const sig = _abort.signal;
+  refreshCacheUsage();
+
+  document.getElementById('st-cache-choose')?.addEventListener('click', async () => {
+    const dir = await window.api.selectCacheDir?.();
+    if (!dir) return;
+    _settings.cache.dir = dir;
+    await persist({ cache: _settings.cache });
+    renderTopic();
+  }, { signal: sig });
+
+  document.getElementById('st-cache-reset')?.addEventListener('click', async () => {
+    _settings.cache.dir = '';
+    await persist({ cache: _settings.cache });
+    renderTopic();
+  }, { signal: sig });
+
+  const maxEl = document.getElementById('st-cache-max');
+  maxEl?.addEventListener('change', async () => {
+    let v = parseInt(maxEl.value, 10);
+    if (!Number.isFinite(v) || v < 0) v = 0;
+    _settings.cache.maxSizeMB = v;
+    maxEl.value = String(v);
+    await persist({ cache: _settings.cache });
+    // Main process sweeps LRU on cache-config change; reflect new usage.
+    refreshCacheUsage();
+  }, { signal: sig });
+
+  document.getElementById('st-cache-clear')?.addEventListener('click', async () => {
+    if (!confirm(t('settings.cache.confirmClear'))) return;
+    try { await window.api.cacheClear?.(); } catch (_) {}
+    refreshCacheUsage();
+  }, { signal: sig });
 }
 
 /* ================================================================== *
@@ -823,6 +933,14 @@ function injectCSS() {
 .st-about-list { list-style:none; padding:0; margin:14px 0; display:flex; flex-direction:column; gap:8px; font-size:13px; }
 .st-about-list a { color:#7c5cff; text-decoration:none; }
 .st-about-ai { font-size:12px; color:var(--muted,#8a90a0); font-style:italic; }
+.st-field-hint { margin:0; }
+.st-cache-path-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.st-cache-path-row .st-input { flex:1; min-width:220px; max-width:none; }
+.st-cache-size-row { display:flex; align-items:center; gap:8px; }
+.st-input-narrow { max-width:120px; }
+.st-unit { font-size:13px; color:var(--muted,#8a90a0); font-weight:600; }
+.st-cache-resolved { margin:6px 0 0; font-size:11.5px; color:var(--muted,#8a90a0); word-break:break-all; }
+.st-cache-usage { font-size:13px; font-weight:600; margin-bottom:8px; }
 `;
   document.head.appendChild(style);
 }

@@ -355,6 +355,14 @@ const SETTINGS_DEFAULTS = {
   //          versions:[{id,path,name,size,mtime,savedAt,note}], activeVersion }
   projects: [],
   defaultMachine: '',          // default machine profile id for transfer
+  // On-disk cache for thumbnails / generated preview images. Persists across
+  // sessions (NOT under the OS temp dir). `dir` empty = platform default
+  // (userData/thumbcache); users may relocate it. `maxSizeMB` caps total size —
+  // when exceeded, least-recently-used entries are evicted. 0 = unlimited.
+  cache: {
+    dir: '',
+    maxSizeMB: 500,
+  },
 };
 
 let _settingsCache = null;
@@ -780,6 +788,9 @@ ipcMain.handle('settings:set', async (_e, patch) => {
   saveSettings(updated);
   // If the output dir changed, record it in the recents list too.
   if (patch.lastOutputDir) recordRecentOutputDir(patch.lastOutputDir);
+  // If the cache config changed (smaller size cap or relocated dir), sweep now
+  // so the on-disk footprint immediately respects the new limit.
+  if (patch.cache) { try { enforceCacheLimit(); } catch (_) {} }
   return { success: true };
 });
 
@@ -1489,8 +1500,23 @@ ipcMain.handle('backend:cancel', async (_e, { requestId }) => {
  *  that changes on disk automatically invalidates its cached thumbnail.
  * ------------------------------------------------------------------ */
 
+/** Platform default cache directory (used when the user hasn't chosen one). */
+function defaultCacheDir() {
+  return path.join(app.getPath('userData'), 'thumbcache');
+}
+
+/**
+ * Resolve the active cache directory. Honors settings.cache.dir when set
+ * (persistent, user-chosen location); otherwise falls back to the platform
+ * default. Never returns an OS temp path, so cached data survives sessions.
+ */
 function thumbcacheDir() {
-  const dir = path.join(app.getPath('userData'), 'thumbcache');
+  let dir = defaultCacheDir();
+  try {
+    const s = loadSettings();
+    const custom = s && s.cache && typeof s.cache.dir === 'string' ? s.cache.dir.trim() : '';
+    if (custom) dir = custom;
+  } catch (_) {}
   try { fs.mkdirSync(dir, { recursive: true }); } catch (_) {}
   return dir;
 }
@@ -1508,7 +1534,12 @@ function thumbCachePath(filePath, mtime) {
 
 function readThumbCache(filePath, mtime) {
   try {
-    const raw = fs.readFileSync(thumbCachePath(filePath, mtime), 'utf8');
+    const cp = thumbCachePath(filePath, mtime);
+    const raw = fs.readFileSync(cp, 'utf8');
+    // Touch the cache file's timestamp so LRU eviction treats a cache HIT as
+    // "recently used" (ordering is by the cache file's own mtime, independent
+    // of the source-file mtime baked into the cache key/filename).
+    try { const now = new Date(); fs.utimesSync(cp, now, now); } catch (_) {}
     return JSON.parse(raw);
   } catch (_) {
     return null;
@@ -1518,10 +1549,93 @@ function readThumbCache(filePath, mtime) {
 function writeThumbCache(filePath, mtime, data) {
   try {
     fs.writeFileSync(thumbCachePath(filePath, mtime), JSON.stringify(data), 'utf8');
+    scheduleCacheEviction();
   } catch (e) {
     console.error('Failed to write thumb cache:', e.message);
   }
 }
+
+/* ------------------------------------------------------------------ *
+ *  Cache accounting & LRU eviction
+ *
+ *  Total on-disk size is capped by settings.cache.maxSizeMB. When a write
+ *  pushes the cache over the limit, the least-recently-used entries (oldest
+ *  cache-file mtime) are deleted until it fits. maxSizeMB = 0 → unlimited.
+ * ------------------------------------------------------------------ */
+
+/** List cache entries with size + mtime. Never throws. */
+function listCacheEntries() {
+  const dir = thumbcacheDir();
+  let names = [];
+  try { names = fs.readdirSync(dir); } catch (_) { return { dir, entries: [] }; }
+  const entries = [];
+  for (const name of names) {
+    if (!name.endsWith('.json')) continue;
+    const fp = path.join(dir, name);
+    try { const st = fs.statSync(fp); if (st.isFile()) entries.push({ fp, size: st.size, mtime: st.mtimeMs }); }
+    catch (_) {}
+  }
+  return { dir, entries };
+}
+
+/** Aggregate cache stats: { dir, sizeBytes, fileCount, maxSizeMB }. */
+function cacheInfo() {
+  const { dir, entries } = listCacheEntries();
+  let sizeBytes = 0;
+  for (const e of entries) sizeBytes += e.size;
+  let maxSizeMB = 500;
+  try { const s = loadSettings(); if (s && s.cache && Number.isFinite(Number(s.cache.maxSizeMB))) maxSizeMB = Number(s.cache.maxSizeMB); } catch (_) {}
+  return { dir, sizeBytes, fileCount: entries.length, maxSizeMB, isDefault: dir === defaultCacheDir() };
+}
+
+/** Evict least-recently-used entries until total size ≤ the configured cap. */
+function enforceCacheLimit() {
+  let maxMB = 500;
+  try { const s = loadSettings(); if (s && s.cache && Number.isFinite(Number(s.cache.maxSizeMB))) maxMB = Number(s.cache.maxSizeMB); } catch (_) {}
+  if (!(maxMB > 0)) return { evicted: 0, freedBytes: 0 };  // 0/invalid = unlimited
+  const limit = maxMB * 1024 * 1024;
+  const { entries } = listCacheEntries();
+  let total = 0;
+  for (const e of entries) total += e.size;
+  if (total <= limit) return { evicted: 0, freedBytes: 0 };
+  entries.sort((a, b) => a.mtime - b.mtime);  // oldest (LRU) first
+  let evicted = 0, freed = 0;
+  for (const e of entries) {
+    if (total <= limit) break;
+    try { fs.unlinkSync(e.fp); total -= e.size; freed += e.size; evicted++; } catch (_) {}
+  }
+  return { evicted, freedBytes: freed };
+}
+
+let _evictTimer = null;
+/** Debounced eviction so a large batch of writes only triggers one sweep. */
+function scheduleCacheEviction() {
+  if (_evictTimer) return;
+  _evictTimer = setTimeout(() => { _evictTimer = null; try { enforceCacheLimit(); } catch (_) {} }, 3000);
+}
+
+/** Report cache location + usage for the Settings UI. */
+ipcMain.handle('cache:info', async () => cacheInfo());
+
+/** Delete every cached entry in the active cache directory. */
+ipcMain.handle('cache:clear', async () => {
+  const { entries } = listCacheEntries();
+  let cleared = 0, freed = 0;
+  for (const e of entries) {
+    try { fs.unlinkSync(e.fp); cleared++; freed += e.size; } catch (_) {}
+  }
+  return { cleared, freedBytes: freed };
+});
+
+/** Pick a folder to use as the persistent cache directory. */
+ipcMain.handle('dialog:selectCacheDir', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Select cache folder',
+    properties: ['openDirectory', 'createDirectory'],
+  });
+  if (result.canceled || !result.filePaths.length) return null;
+  return result.filePaths[0];
+});
 
 /**
  * Spawn the backend once to generate thumbnails for the given paths.

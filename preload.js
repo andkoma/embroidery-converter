@@ -185,6 +185,15 @@ contextBridge.exposeInMainWorld('api', {
   openAnyFiles:    ()    => ipcRenderer.invoke('dialog:openAnyFiles'),
   defaultDir:      ()    => ipcRenderer.invoke('fs:defaultDir'),
   readText:        (path) => ipcRenderer.invoke('fs:readText', { path }),
+  selectCacheDir:  ()    => ipcRenderer.invoke('dialog:selectCacheDir'),
+
+  /* ---------------------------------------------------------------- *
+   *  Persistent thumbnail / preview cache (configurable, size-capped)
+   * ---------------------------------------------------------------- */
+  /** @returns {Promise<{dir,sizeBytes,fileCount,maxSizeMB,isDefault}>} */
+  cacheInfo:       ()    => ipcRenderer.invoke('cache:info'),
+  /** Delete all cached entries. @returns {Promise<{cleared,freedBytes}>} */
+  cacheClear:      ()    => ipcRenderer.invoke('cache:clear'),
 
   /* ---------------------------------------------------------------- *
    *  Projects (.ecproj package export/import)
