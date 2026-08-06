@@ -100,11 +100,21 @@ let _search    = '';
 let _extFilter = new Set();  // active ext filter; empty = all exts shown
 let _scanReqId = null;
 let _scanning  = false;
+let _scanGen   = 0;          // bumps each startScan; guards stale background scans
 let _formats   = [];         // { extension, description, write, read }[] from backend
 
 let _viewMode  = 'list';     // 'list' | 'card' (persisted in localStorage)
 let _thumbReqId = null;      // active thumbnail-stream request id
 let _tagsByPath = {};        // path → string[]  (AI vision auto-tagging groundwork)
+let _mounted   = false;      // panel currently mounted? (scan keeps running if not)
+
+// Card view: chunked rendering + viewport-based lazy thumbnails so huge
+// file counts never freeze the UI or blank the grid.
+let _cardIO        = null;   // IntersectionObserver for card thumbnails
+let _cardRenderTok = 0;      // bumps to cancel a stale chunked render
+let _cardByPath    = null;   // path → file (for the visible-card lookup)
+let _thumbQueue    = new Map(); // path → file waiting for a thumbnail
+let _thumbTimer    = null;   // debounce timer for the thumbnail queue
 
 const BV_VIEW_KEY = 'ec_batch_view';
 
@@ -703,9 +713,20 @@ function onScroll() {
 /* ------------------------------------------------------------------ *
  *  Card renderer (with cached vector thumbnails)
  * ------------------------------------------------------------------ */
+/**
+ * Render the card grid.  For large collections we (a) append cards in small
+ * chunks across animation frames so the main thread is never blocked (no more
+ * blank screen), and (b) only fetch/render each card's vector thumbnail once
+ * it scrolls into view (IntersectionObserver), so the count rises immediately
+ * instead of waiting for thousands of previews to be computed up-front.
+ */
 function renderCards() {
   const grid = document.getElementById('bv-card-grid');
   if (!grid) return;
+
+  // Tear down any observer / in-flight chunked render from a previous pass.
+  if (_cardIO) { _cardIO.disconnect(); _cardIO = null; }
+  const token = ++_cardRenderTok;
 
   if (_filtered.length === 0) {
     const msg = _folders.length === 0
@@ -715,33 +736,73 @@ function renderCards() {
     return;
   }
 
-  const frag = document.createDocumentFragment();
-  for (const f of _filtered) {
-    const sel = _selected.has(f.path);
-    const card = document.createElement('div');
-    card.className = 'bv-card' + (sel ? ' bv-selected' : '');
-    card.dataset.path = f.path;
-    const preview = f.preview
-      ? renderPreview(f.preview)
-      : `<span class="bv-card-thumb-ph">${escBv(t('preview.none'))}</span>`;
-    const tags = (_tagsByPath[f.path] || [])
-      .map(tag => `<span class="bv-card-tag">${escBv(tag)}</span>`).join('');
-    card.innerHTML = `
-      <input type="checkbox" class="bv-card-check"${sel ? ' checked' : ''} title="${escBv(f.path)}"/>
-      <div class="bv-card-thumb">${preview}</div>
-      <div class="bv-card-body">
-        <div class="bv-card-name" title="${escBv(f.path)}">${escBv(f.name)}</div>
-        <div class="bv-card-meta">
-          <span class="bv-card-badge">${escBv((f.ext || '').toUpperCase())}</span>
-          <span class="bv-card-size">${fmtSize(f.size)}</span>
-          <span class="bv-card-status bv-st-${f.status || 'pending'}">${statusIcon(f.status)}</span>
-        </div>
-        ${tags ? `<div class="bv-card-tags">${tags}</div>` : ''}
+  _cardByPath = new Map(_filtered.map(f => [f.path, f]));
+  _cardIO = new IntersectionObserver(onCardVisible, { root: grid, rootMargin: '250px' });
+
+  grid.innerHTML = '';
+  const list = _filtered;
+  const CHUNK = 80;
+  let i = 0;
+
+  const step = () => {
+    if (token !== _cardRenderTok) return;          // superseded by a newer render
+    const g = document.getElementById('bv-card-grid');
+    if (!g) return;
+    const frag = document.createDocumentFragment();
+    const end = Math.min(i + CHUNK, list.length);
+    for (; i < end; i++) {
+      const card = buildCard(list[i]);
+      frag.appendChild(card);
+    }
+    g.appendChild(frag);
+    // Observe the newly-added cards for lazy thumbnail loading.
+    g.querySelectorAll('.bv-card:not([data-observed])').forEach(el => {
+      el.setAttribute('data-observed', '1');
+      if (_cardIO) _cardIO.observe(el);
+    });
+    if (i < list.length && token === _cardRenderTok) {
+      requestAnimationFrame(step);
+    }
+  };
+  requestAnimationFrame(step);
+}
+
+/** Build a single card element (thumbnail filled lazily when visible). */
+function buildCard(f) {
+  const sel = _selected.has(f.path);
+  const card = document.createElement('div');
+  card.className = 'bv-card' + (sel ? ' bv-selected' : '');
+  card.dataset.path = f.path;
+  const preview = f.preview
+    ? renderPreview(f.preview)
+    : `<span class="bv-card-thumb-ph">${escBv(t('preview.none'))}</span>`;
+  const tags = (_tagsByPath[f.path] || [])
+    .map(tag => `<span class="bv-card-tag">${escBv(tag)}</span>`).join('');
+  card.innerHTML = `
+    <input type="checkbox" class="bv-card-check"${sel ? ' checked' : ''} title="${escBv(f.path)}"/>
+    <div class="bv-card-thumb">${preview}</div>
+    <div class="bv-card-body">
+      <div class="bv-card-name" title="${escBv(f.path)}">${escBv(f.name)}</div>
+      <div class="bv-card-meta">
+        <span class="bv-card-badge">${escBv((f.ext || '').toUpperCase())}</span>
+        <span class="bv-card-size">${fmtSize(f.size)}</span>
+        <span class="bv-card-status bv-st-${f.status || 'pending'}">${statusIcon(f.status)}</span>
       </div>
-    `;
-    frag.appendChild(card);
+      ${tags ? `<div class="bv-card-tags">${tags}</div>` : ''}
+    </div>
+  `;
+  return card;
+}
+
+/** IntersectionObserver callback: queue thumbnails for cards entering view. */
+function onCardVisible(entries) {
+  for (const e of entries) {
+    if (!e.isIntersecting) continue;
+    const path = e.target.dataset.path;
+    const f = _cardByPath ? _cardByPath.get(path) : null;
+    if (f) queueThumb(f);
+    if (_cardIO) _cardIO.unobserve(e.target);
   }
-  grid.replaceChildren(frag);
 }
 
 /** Render a vector preview (shared shape with Gallery's renderPreview). */
@@ -767,12 +828,25 @@ function renderPreview(preview) {
  *  Only requested lazily when the card view is active, to avoid the cost
  *  when the user stays in the (default) list view.
  * ------------------------------------------------------------------ */
-function loadThumbnails() {
-  if (_viewMode !== 'card') return;
-  const need = _allFiles.filter(f => !f.preview && !f._thumbTried);
-  if (need.length === 0) return;
-  const items = need.map(f => ({ path: f.path, mtime: f.mtime }));
-  const byPath = new Map(_allFiles.map(f => [f.path, f]));
+/**
+ * Lazy thumbnails: cards register here as they scroll into view.  Requests are
+ * debounced and batched so scrolling through thousands of files only fetches
+ * the previews actually seen — the scan/count is never blocked by thumbnailing.
+ */
+function queueThumb(f) {
+  if (!f || f.preview || f._thumbTried || _thumbQueue.has(f.path)) return;
+  _thumbQueue.set(f.path, f);
+  if (_thumbTimer) return;
+  _thumbTimer = setTimeout(flushThumbQueue, 120);
+}
+
+function flushThumbQueue() {
+  _thumbTimer = null;
+  const files = Array.from(_thumbQueue.values());
+  _thumbQueue.clear();
+  if (files.length === 0) return;
+  const items = files.map(f => ({ path: f.path, mtime: f.mtime }));
+  const byPath = new Map(files.map(f => [f.path, f]));
 
   window.api.getThumbsCached(items, (entry) => {
     if (entry.type === 'thumb') {
@@ -785,15 +859,35 @@ function loadThumbnails() {
         f.colors   = m.color_count;
         f.width    = m.width_mm;
         f.height   = m.height_mm;
+        fillCardThumb(f);
       }
     } else if (entry.type === 'done') {
       _thumbReqId = null;
-      need.forEach(f => { f._thumbTried = true; });
-      if (_viewMode === 'card') renderCards();
+      files.forEach(f => { f._thumbTried = true; });
     }
   }).then(id => { _thumbReqId = id; }).catch(err => {
     console.error('Batch thumbnail error:', err);
   });
+}
+
+/** Fill a single already-rendered card's thumbnail once its preview arrives. */
+function fillCardThumb(f) {
+  if (_viewMode !== 'card') return;
+  const grid = document.getElementById('bv-card-grid');
+  if (!grid) return;
+  const card = grid.querySelector(`.bv-card[data-path="${cssEscBv(f.path)}"]`);
+  if (!card) return;
+  const thumb = card.querySelector('.bv-card-thumb');
+  if (thumb && f.preview) thumb.innerHTML = renderPreview(f.preview);
+}
+
+/** Back-compat no-op: thumbnails now load lazily per visible card. */
+function loadThumbnails() { /* handled by IntersectionObserver in renderCards */ }
+
+/** CSS.escape fallback for attribute selectors. */
+function cssEscBv(s) {
+  if (window.CSS && CSS.escape) return CSS.escape(s);
+  return String(s).replace(/["\\\]]/g, '\\$&');
 }
 
 function setViewMode(mode) {
@@ -901,6 +995,10 @@ function beginAliasEdit(id) {
  * @param {boolean} forceAll  when true, ignore the cache and re-scan everything
  */
 async function startScan(forceAll) {
+  // New scan generation — any still-running background scan becomes "stale"
+  // and will stop touching the shared file list / DOM (but still warms cache).
+  const gen = ++_scanGen;
+
   // Cancel any running scan
   if (_scanReqId) {
     await window.api.cancelStream(_scanReqId).catch(() => {});
@@ -945,7 +1043,7 @@ async function startScan(forceAll) {
   }
 
   _scanning = true;
-  setScanStatus('<span class="bv-spin">⟳</span> Scanning…');
+  scanProgress();
 
   const opts = { folders: toScan.map(t => t.path), recursive: true };
   const mtimeByFolder = new Map(toScan.map(t => [t.path, t.mtime]));
@@ -953,21 +1051,28 @@ async function startScan(forceAll) {
   let lastRenderCount = _allFiles.length;
 
   _scanReqId = await window.api.scanFolders(opts, (data) => {
+    const stale = (gen !== _scanGen);  // a newer scan superseded this one
     if (data.type === 'file') {
       const entry = { ...data, status: 'pending' };
-      collected.push(entry);
+      collected.push(entry);            // always collect (local) so cache is warmed
+      if (stale) return;
       _allFiles.push(entry);
-      // Throttle re-renders: every 100 new files
-      if (_allFiles.length - lastRenderCount >= 100) {
+      // Live count text updates every 25 files (cheap); the heavier grid
+      // re-render is throttled to every 200 and only while the panel is mounted.
+      if (_allFiles.length % 25 === 0) scanProgress();
+      if (_allFiles.length - lastRenderCount >= 200) {
         lastRenderCount = _allFiles.length;
-        applyFilter(); renderContent(); updateCounts();
+        applyFilter();
+        if (_mounted) { renderContent(); updateCounts(); }
       }
     } else if (data.type === 'error' && data.path === undefined) {
-      setScanStatus('Error: ' + (data.message || 'scan failed'));
+      if (!stale) setScanStatus('Error: ' + (data.message || 'scan failed'));
     } else if (data.type === 'done') {
-      _scanning  = false;
-      _scanReqId = null;
-      setScanStatus('');
+      if (!stale) {
+        _scanning  = false;
+        _scanReqId = null;
+        setScanStatus('');
+      }
       // Update cache: bucket freshly-collected files per scanned folder using
       // the symlink-robust bucketer so no folder ends up with an empty list
       // (which previously caused the cache to restore nothing on the next visit).
@@ -981,13 +1086,24 @@ async function startScan(forceAll) {
         };
       }
       window.store.set('scanCache', c);
-      applyFilter(); renderContent(); updateCounts(); loadThumbnails();
+      if (stale) return;   // background scan: cache warmed, nothing else to do
+      applyFilter();
+      // The panel may have been left during the scan — only touch the DOM if
+      // it is still mounted; the cache is now warm for the next visit anyway.
+      if (_mounted) { renderContent(); updateCounts(); }
     }
   }).catch(err => {
     _scanning = false;
     setScanStatus('Error: ' + (err && err.message ? err.message : String(err)));
     return null;
   });
+}
+
+/** Show a live "Scanning… N files" progress indicator (i18n). */
+function scanProgress() {
+  if (!_mounted) return;
+  const n = _allFiles.length;
+  setScanStatus(`<span class="bv-spin">⟳</span> ${escBv(t('batch.scanning'))} — ${n}`);
 }
 
 function setScanStatus(html) {
@@ -1229,6 +1345,8 @@ async function mount(container, store) {
     _viewMode = (v === 'card') ? 'card' : 'list';
   } catch (_) { _viewMode = 'list'; }
 
+  _mounted = true;
+
   injectStyles();
   container.innerHTML = buildHTML();
   wireEvents();
@@ -1280,14 +1398,22 @@ async function mount(container, store) {
 }
 
 function unmount() {
-  if (_scanReqId) {
-    window.api.cancelStream(_scanReqId).catch(() => {});
-    _scanReqId = null;
-  }
+  _mounted = false;
+
+  // Deliberately DO NOT cancel a running folder scan here: let it finish in the
+  // background so it warms the shared scan cache, making the next visit instant.
+  // The stale-generation guard keeps its callbacks from touching the (now
+  // removed) DOM or a future mount's file list.
+
+  // Thumbnails are view-only work — stop them and clear the lazy queue.
   if (_thumbReqId) {
     window.api.cancelStream(_thumbReqId).catch(() => {});
     _thumbReqId = null;
   }
+  if (_thumbTimer) { clearTimeout(_thumbTimer); _thumbTimer = null; }
+  _thumbQueue.clear();
+  if (_cardIO) { _cardIO.disconnect(); _cardIO = null; }
+
   if (_abortCtrl) {
     _abortCtrl.abort();
     _abortCtrl = null;
