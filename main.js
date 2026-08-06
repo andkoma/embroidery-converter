@@ -11,6 +11,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 const { spawn, spawnSync } = require('child_process');
 const zipModule = require('./main/zip');
+const logger = require('./main/logger');
 
 const isDev = process.argv.includes('--dev') || !app.isPackaged;
 
@@ -495,6 +496,15 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  // Initialize logging system
+  logger.init(app.getPath('userData'));
+  logger.info('=== Application started ===', {
+    version: app.getVersion(),
+    platform: process.platform,
+    isDev,
+    isPackaged: app.isPackaged
+  });
+  
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -503,6 +513,11 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
+});
+
+app.on('quit', () => {
+  logger.info('=== Application quit ===');
+  logger.close();
 });
 
 /* ------------------------------------------------------------------ *
@@ -515,6 +530,11 @@ ipcMain.handle('backend:status', async () => {
     if (!backend) {
       // No bundled binary AND no Python interpreter found on the machine.
       const scriptOk = fs.existsSync(resourcePath('scripts', 'convert.py'));
+      logger.error('Backend not available', {
+        pythonFound: false,
+        scriptOk,
+        reason: 'no-python'
+      });
       return {
         available: false,
         mode: null,
@@ -527,9 +547,25 @@ ipcMain.handle('backend:status', async () => {
             'needs a Python 3 runtime.',
       };
     }
+    
+    logger.info('Backend resolved', {
+      mode: backend.mode,
+      command: backend.command.split('/').pop() // Log just the executable name for privacy
+    });
+    
     // A backend was resolved; confirm the engine actually runs (imports the
     // bundled pyembroidery and returns the format list).
     const res = await runBackend('formats', {});
+    
+    if (res.success) {
+      logger.info('Backend engine test passed', { mode: backend.mode });
+    } else {
+      logger.error('Backend engine test failed', { 
+        mode: backend.mode, 
+        error: res.error ? res.error.substring(0, 200) : 'unknown error' 
+      });
+    }
+    
     return {
       available: !!res.success,
       mode: backend.mode,
@@ -541,6 +577,10 @@ ipcMain.handle('backend:status', async () => {
   } catch (e) {
     // Never let this throw — the renderer treats a thrown status as a hard
     // "Backend error", which is unhelpful. Return a structured failure.
+    logger.error('backend:status exception', {
+      message: e.message,
+      code: e.code
+    });
     return {
       available: false,
       mode: null,
@@ -907,10 +947,53 @@ ipcMain.handle('secrets:delete', async (_e, { ref } = {}) => {
  * @param {Object} params
  * @param {Object} params.manifest - Full manifest: {version, name, tree, assets}
  * @param {Array}  params.assets - [{id, path, ...asset metadata}]
- * @param {Array}  params.previews - [{id, preview: {polylines, ...}}] (optional)
- * @returns {Promise<{success: boolean, path?: string, error?: string}>}
+/* ------------------------------------------------------------------ *
+ *  Application & Logging Handlers
+ * ------------------------------------------------------------------ */
+
+/**
+ * Get application logs for debugging/support
+ * Returns: { success, logs, logFile }
  */
-ipcMain.handle('project:export', async (_e, { manifest, assets = [], previews = [] } = {}) => {
+ipcMain.handle('app:get-logs', async () => {
+  try {
+    const logs = logger.exportLogs();
+    const logFile = logger.getLogFile();
+    return {
+      success: true,
+      logs,
+      logFile,
+      logsDir: logger.getLogsDir()
+    };
+  } catch (err) {
+    return {
+      success: false,
+      error: err.message
+    };
+  }
+});
+
+/**
+ * Open logs folder in file explorer
+ */
+ipcMain.handle('app:open-logs-folder', async () => {
+  try {
+    const logsDir = logger.getLogsDir();
+    if (!logsDir) {
+      return { success: false, error: 'Logs directory not initialized' };
+    }
+    shell.openPath(logsDir);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+/* ================================================================== *
+ *  Project Handlers
+ * ================================================================== */
+
+
   if (!manifest) return { success: false, error: 'Missing manifest' };
   
   try {
