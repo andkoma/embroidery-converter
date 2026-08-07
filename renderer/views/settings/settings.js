@@ -916,7 +916,12 @@ function wireLogs() {
       viewer.innerHTML = `<div class="st-logs-error">${esc(t('settings.logs.loadFailed'))}</div>`;
     }
   }
-}\n\n/* ================================================================== *\n *  ABOUT\n * ================================================================== */\nfunction tplAbout() {
+}
+
+/* ================================================================== *
+ *  ABOUT
+ * ================================================================== */
+function tplAbout() {
   const v = _appVersion || '';
   return section(t('settings.topic.about'), '', `
     <div class="st-about">
