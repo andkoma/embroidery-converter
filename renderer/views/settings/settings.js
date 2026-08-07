@@ -60,6 +60,7 @@ const TOPICS = [
   { id: 'transfer',   key: 'settings.topic.transfer',   icon: '📤' },
   { id: 'cache',      key: 'settings.topic.cache',      icon: '🗂️' },
   { id: 'ai',         key: 'settings.topic.ai',         icon: '✨' },
+  { id: 'logs',       key: 'settings.topic.logs',       icon: '📋' },
   { id: 'about',      key: 'settings.topic.about',      icon: 'ℹ️' },
 ];
 
@@ -184,6 +185,7 @@ function renderTopic() {
     case 'transfer':   host.innerHTML = tplTransfer();   wireTransfer();   break;
     case 'cache':      host.innerHTML = tplCache();      wireCache();      break;
     case 'ai':         host.innerHTML = tplAI();         wireAI();         break;
+    case 'logs':       host.innerHTML = tplLogs();       wireLogs();       break;
     case 'about':      host.innerHTML = tplAbout();      wireAbout();      break;
   }
 }
@@ -825,9 +827,89 @@ function wireAI() {
 }
 
 /* ================================================================== *
- *  ABOUT
+ *  LOGS
  * ================================================================== */
-function tplAbout() {
+function tplLogs() {
+  return section(t('settings.topic.logs'), t('settings.logs.desc'), `
+    <div class="st-logs-container">
+      <div class="st-logs-controls">
+        <button id="st-logs-refresh" class="st-btn-primary">${esc(t('settings.logs.refresh'))}</button>
+        <button id="st-logs-export" class="st-btn-secondary">${esc(t('settings.logs.export'))}</button>
+        <button id="st-logs-clear" class="st-btn-danger" title="${esc(t('settings.logs.clearHint'))}">${esc(t('settings.logs.clear'))}</button>
+      </div>
+      <div id="st-logs-viewer" class="st-logs-viewer">
+        <div class="st-logs-loading">${esc(t('settings.logs.loading'))}</div>
+      </div>
+    </div>
+  `);
+}
+
+function wireLogs() {
+  const sig = _abort.signal;
+  const viewer = document.getElementById('st-logs-viewer');
+  
+  // Load logs on mount
+  loadAndDisplayLogs();
+  
+  // Refresh button
+  document.getElementById('st-logs-refresh')?.addEventListener('click', async () => {
+    loadAndDisplayLogs();
+  }, { signal: sig });
+  
+  // Export button
+  document.getElementById('st-logs-export')?.addEventListener('click', async () => {
+    try {
+      const content = await window.api.exportLogs?.();
+      if (!content) {
+        alert(t('settings.logs.exportEmpty'));
+        return;
+      }
+      
+      // Download as text file
+      const blob = new Blob([content], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `embroidery-logs-${new Date().toISOString().split('T')[0]}.txt`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Export logs error:', err);
+      alert(t('settings.logs.exportFailed'));
+    }
+  }, { signal: sig });
+  
+  // Clear button
+  document.getElementById('st-logs-clear')?.addEventListener('click', async () => {
+    if (!confirm(t('settings.logs.confirmClear'))) return;
+    // Note: Actual log clearing would require an IPC handler in main.js
+    alert(t('settings.logs.clearRequiresRestart'));
+  }, { signal: sig });
+  
+  async function loadAndDisplayLogs() {
+    if (!viewer) return;
+    
+    viewer.innerHTML = `<div class="st-logs-loading">${esc(t('settings.logs.loading'))}</div>`;
+    
+    try {
+      const logs = await window.api.getLogs?.();
+      
+      if (!logs || logs.length === 0) {
+        viewer.innerHTML = `<div class="st-logs-empty">${esc(t('settings.logs.empty'))}</div>`;
+        return;
+      }
+      
+      // Render logs table
+      const rows = logs.map(log => `
+        <div class="st-log-entry st-log-${log.level.toLowerCase()}">
+          <span class="st-log-time">${esc(log.timestamp)}</span>
+          <span class="st-log-level">[${esc(log.level)}]</span>
+          <span class="st-log-msg">${esc(log.message)}</span>
+        </div>
+      `).join('');\n      
+      viewer.innerHTML = `<div class="st-logs-list">${rows}</div>`;\n    } catch (err) {\n      console.error('Error loading logs:', err);\n      viewer.innerHTML = `<div class="st-logs-error">${esc(t('settings.logs.loadFailed'))}</div>`;\n    }\n  }\n}\n\n/* ================================================================== *\n *  ABOUT\n * ================================================================== */\nfunction tplAbout() {
   const v = _appVersion || '';
   return section(t('settings.topic.about'), '', `
     <div class="st-about">
@@ -941,7 +1023,26 @@ function injectCSS() {
 .st-unit { font-size:13px; color:var(--muted,#8a90a0); font-weight:600; }
 .st-cache-resolved { margin:6px 0 0; font-size:11.5px; color:var(--muted,#8a90a0); word-break:break-all; }
 .st-cache-usage { font-size:13px; font-weight:600; margin-bottom:8px; }
-`;
+.st-logs-container { display:flex; flex-direction:column; gap:16px; }
+.st-logs-controls { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.st-logs-viewer { background:var(--panel-bg,#fff); border:1px solid var(--border,#e2e5ee); border-radius:8px; max-height:600px; overflow-y:auto; font-family:monospace; font-size:12px; }
+.st-logs-list { display:flex; flex-direction:column; }
+.st-log-entry { padding:10px 14px; border-bottom:1px solid var(--border,#e2e5ee); line-height:1.4; display:flex; gap:10px; align-items:flex-start; }
+.st-log-entry:last-child { border-bottom:none; }
+.st-log-entry.st-log-error { background:rgba(214,69,69,.08); }
+.st-log-entry.st-log-warn { background:rgba(194,97,12,.08); }
+.st-log-entry.st-log-info { background:transparent; }
+.st-log-time { color:var(--muted,#8a90a0); flex-shrink:0; min-width:165px; }
+.st-log-level { font-weight:600; flex-shrink:0; min-width:60px; }
+.st-log-entry.st-log-error .st-log-level { color:#d64545; }
+.st-log-entry.st-log-warn .st-log-level { color:#c2610c; }
+.st-log-entry.st-log-info .st-log-level { color:#1f9d55; }
+.st-log-msg { flex:1; min-width:0; word-break:break-word; color:var(--fg,#1f2430); }
+.st-logs-empty { padding:24px 14px; text-align:center; color:var(--muted,#8a90a0); font-size:13px; }
+.st-logs-error { padding:24px 14px; text-align:center; color:#d64545; font-size:13px; }
+.st-logs-loading { padding:24px 14px; text-align:center; color:var(--muted,#8a90a0); font-size:13px; }
+.st-btn-danger { align-self:flex-start; }
+`;  
   document.head.appendChild(style);
 }
 

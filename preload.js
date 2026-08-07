@@ -53,6 +53,13 @@ contextBridge.exposeInMainWorld('api', {
   convert:      (payload)    => ipcRenderer.invoke('backend:convert', payload),
 
   /* ---------------------------------------------------------------- *
+   *  Logging
+   * ---------------------------------------------------------------- */
+  getLogs:      ()           => ipcRenderer.invoke('logs:get'),
+  getLogFiles:  ()           => ipcRenderer.invoke('logs:list'),
+  exportLogs:   ()           => ipcRenderer.invoke('logs:export'),
+
+  /* ---------------------------------------------------------------- *
    *  Streaming (scan + thumbs)
    *
    *  Both helpers auto-register the callback before invoking the IPC
@@ -230,4 +237,12 @@ contextBridge.exposeInMainWorld('api', {
    *  Platform info
    * ---------------------------------------------------------------- */
   platform: process.platform,
+
+  /* ---------------------------------------------------------------- *
+   *  Diagnostics (for x64 & backend troubleshooting)
+   * ---------------------------------------------------------------- */
+  /** Generate diagnostic report for backend status & system info */
+  diagnosticsReport: (backendInfo) => ipcRenderer.invoke('diagnostics:report', backendInfo),
+  /** Generate diagnostic report as formatted text */
+  diagnosticsReportText: (backendInfo) => ipcRenderer.invoke('diagnostics:report-text', backendInfo),
 });

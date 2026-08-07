@@ -282,6 +282,68 @@ function exportLogs() {
 }
 
 /**
+ * Get logs as array of lines with metadata
+ * Returns last N lines with timestamp, level, and message
+ */
+function getLogs(limit = 500) {
+  if (!logFile || !fs.existsSync(logFile)) {
+    return [];
+  }
+  
+  try {
+    const content = fs.readFileSync(logFile, 'utf-8');
+    const lines = content.split('\n').filter(l => l.trim()).slice(-limit);
+    
+    // Parse log lines into objects
+    return lines.map(line => {
+      const match = line.match(/^\[(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)\]\s\[(\w+)\]\s(.*)$/);
+      if (match) {
+        const [, timestamp, level, message] = match;
+        return {
+          timestamp: new Date(timestamp).toLocaleString(),
+          level,
+          message,
+          raw: line
+        };
+      }
+      return {
+        timestamp: new Date().toLocaleString(),
+        level: 'INFO',
+        message: line,
+        raw: line
+      };
+    });
+  } catch (err) {
+    return [{
+      timestamp: new Date().toLocaleString(),
+      level: 'ERROR',
+      message: `Failed to read logs: ${err.message}`,
+      raw: ''
+    }];
+  }
+}
+
+/**
+ * Get all available log files (for date selection)
+ */
+function getLogFiles() {
+  if (!logsDir || !fs.existsSync(logsDir)) {
+    return [];
+  }
+  
+  try {
+    const files = fs.readdirSync(logsDir)
+      .filter(f => f.startsWith('embroidery-converter-') && f.endsWith('.log'))
+      .sort()
+      .reverse(); // Most recent first
+    return files;
+  } catch (err) {
+    console.error('[Logger] Failed to list log files:', err);
+    return [];
+  }
+}
+
+/**
  * Close the write stream (call on app quit)
  */
 function close() {
@@ -305,5 +367,7 @@ module.exports = {
   getLogFile,
   getLogsDir,
   exportLogs,
+  getLogs,
+  getLogFiles,
   close
 };

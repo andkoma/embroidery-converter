@@ -12,6 +12,7 @@ const crypto = require('crypto');
 const { spawn, spawnSync } = require('child_process');
 const zipModule = require('./main/zip');
 const logger = require('./main/logger');
+const diagnostics = require('./main/diagnostics');
 
 const isDev = process.argv.includes('--dev') || !app.isPackaged;
 
@@ -36,7 +37,31 @@ function resourcePath(...p) {
 function findBundledBinary() {
   const exe = process.platform === 'win32' ? 'convert.exe' : 'convert';
   const candidate = resourcePath('pybin', exe);
-  return fs.existsSync(candidate) ? candidate : null;
+  
+  // Try primary location
+  if (fs.existsSync(candidate)) {
+    return candidate;
+  }
+  
+  // For macOS, try architecture-specific locations
+  if (process.platform === 'darwin') {
+    const arch = process.arch; // arm64 or x64
+    const archCandidate = resourcePath('pybin', arch, exe);
+    if (fs.existsSync(archCandidate)) {
+      return archCandidate;
+    }
+    
+    // Log architecture mismatch only in debug mode
+    if (process.env.DEBUG) {
+      logger?.info('Architecture-specific binary not found', {
+        arch,
+        expected: candidate,
+        tried: archCandidate
+      });
+    }
+  }
+  
+  return null;
 }
 
 // Cache the resolved interpreter so we do not probe the filesystem repeatedly.
@@ -470,45 +495,72 @@ function recordRecentOutputDir(dir) {
  * ------------------------------------------------------------------ */
 
 function createWindow() {
-  mainWindow = new BrowserWindow({
-    width: 1180,
-    height: 820,
-    minWidth: 940,
-    minHeight: 640,
-    backgroundColor: '#f4f6fb',
-    title: 'Embroidery Converter',
-    icon: path.join(__dirname, 'assets', process.platform === 'win32' ? 'icon.ico' : 'icon.png'),
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
-  });
+  try {
+    mainWindow = new BrowserWindow({
+      width: 1180,
+      height: 820,
+      minWidth: 940,
+      minHeight: 640,
+      backgroundColor: '#f4f6fb',
+      title: 'Embroidery Converter',
+      icon: path.join(__dirname, 'assets', process.platform === 'win32' ? 'icon.ico' : 'icon.png'),
+      webPreferences: {
+        preload: path.join(__dirname, 'preload.js'),
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+      },
+    });
 
-  mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
-  mainWindow.setMenuBarVisibility(false);
+    const htmlPath = path.join(__dirname, 'renderer', 'index.html');
+    if (!fs.existsSync(htmlPath)) {
+      throw new Error(`HTML file not found: ${htmlPath}`);
+    }
 
-  if (isDev) {
-    // mainWindow.webContents.openDevTools({ mode: 'detach' });
+    mainWindow.loadFile(htmlPath);
+    mainWindow.setMenuBarVisibility(false);
+
+    if (isDev) {
+      // mainWindow.webContents.openDevTools({ mode: 'detach' });
+    }
+
+    mainWindow.on('closed', () => (mainWindow = null));
+    
+    mainWindow.on('render-process-gone', (details) => {
+      logger.error('Renderer process crashed', {
+        reason: details.reason,
+        exitCode: details.exitCode
+      });
+    });
+  } catch (err) {
+    logger.error('Failed to create window', err);
+    throw err;
   }
-
-  mainWindow.on('closed', () => (mainWindow = null));
 }
 
 app.whenReady().then(() => {
-  // Initialize logging system
-  logger.init(app.getPath('userData'));
-  logger.info('=== Application started ===', {
-    version: app.getVersion(),
-    platform: process.platform,
-    isDev,
-    isPackaged: app.isPackaged
-  });
-  
-  createWindow();
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
-  });
+  try {
+    // Initialize logging system
+    logger.init(app.getPath('userData'));
+    logger.info('=== Application started ===', {
+      version: app.getVersion(),
+      platform: process.platform,
+      arch: process.arch,
+      isDev,
+      isPackaged: app.isPackaged,
+      cpuCount: require('os').cpus().length,
+      resources: app.isPackaged ? process.resourcesPath : 'dev-mode'
+    });
+    
+    createWindow();
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    });
+  } catch (err) {
+    console.error('❌ FATAL: Failed to start application:', err);
+    logger.error('Application startup failed', err);
+    process.exit(1);
+  }
 });
 
 app.on('window-all-closed', () => {
@@ -530,11 +582,17 @@ ipcMain.handle('backend:status', async () => {
     if (!backend) {
       // No bundled binary AND no Python interpreter found on the machine.
       const scriptOk = fs.existsSync(resourcePath('scripts', 'convert.py'));
+      const bundledBinaryPath = resourcePath('pybin', process.platform === 'win32' ? 'convert.exe' : 'convert');
+      
       logger.error('Backend not available', {
         pythonFound: false,
         scriptOk,
-        reason: 'no-python'
+        arch: process.arch,
+        bundledBinaryPath,
+        bundledBinaryExists: fs.existsSync(bundledBinaryPath),
+        reason: 'no-python-or-binary'
       });
+      
       return {
         available: false,
         mode: null,
@@ -550,6 +608,7 @@ ipcMain.handle('backend:status', async () => {
     
     logger.info('Backend resolved', {
       mode: backend.mode,
+      arch: process.arch,
       command: backend.command.split('/').pop() // Log just the executable name for privacy
     });
     
@@ -561,7 +620,8 @@ ipcMain.handle('backend:status', async () => {
       logger.info('Backend engine test passed', { mode: backend.mode });
     } else {
       logger.error('Backend engine test failed', { 
-        mode: backend.mode, 
+        mode: backend.mode,
+        arch: process.arch,
         error: res.error ? res.error.substring(0, 200) : 'unknown error' 
       });
     }
@@ -579,7 +639,8 @@ ipcMain.handle('backend:status', async () => {
     // "Backend error", which is unhelpful. Return a structured failure.
     logger.error('backend:status exception', {
       message: e.message,
-      code: e.code
+      code: e.code,
+      arch: process.arch
     });
     return {
       available: false,
@@ -821,6 +882,35 @@ ipcMain.handle('app:getVersion', async () => {
  * The renderer sends only the fields it wants to change; existing fields
  * not present in `patch` are left untouched.
  */
+ipcMain.handle('logs:get', async () => {
+  return logger.getLogs(500);
+});
+
+ipcMain.handle('logs:list', async () => {
+  return logger.getLogFiles();
+});
+
+ipcMain.handle('logs:export', async () => {
+  return logger.exportLogs();
+});
+
+ipcMain.handle('diagnostics:report', async (_e, backendInfo) => {
+  const report = diagnostics.generateDiagnosticReport(
+    backendInfo,
+    app.isPackaged ? process.resourcesPath : __dirname
+  );
+  logger.info('Diagnostic report generated', { issues: report.issues.length });
+  return report;
+});
+
+ipcMain.handle('diagnostics:report-text', async (_e, backendInfo) => {
+  const report = diagnostics.generateDiagnosticReport(
+    backendInfo,
+    app.isPackaged ? process.resourcesPath : __dirname
+  );
+  return diagnostics.formatReportAsText(report);
+});
+
 ipcMain.handle('settings:set', async (_e, patch) => {
   if (!patch || typeof patch !== 'object') return { success: false, error: 'Invalid patch' };
   const current = loadSettings();

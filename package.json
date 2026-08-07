@@ -11,6 +11,7 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
+    "postinstall": "node scripts/postinstall.js",
     "build": "electron-builder",
     "build:win": "electron-builder --win",
     "build:mac": "electron-builder --mac",
@@ -34,6 +35,7 @@
       "preload.js",
       "main/zip.js",
       "main/logger.js",
+      "main/diagnostics.js",
       "renderer/**/*",
       "assets/**/*",
       "!**/*.md",
