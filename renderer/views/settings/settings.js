@@ -908,8 +908,15 @@ function wireLogs() {
           <span class="st-log-level">[${esc(log.level)}]</span>
           <span class="st-log-msg">${esc(log.message)}</span>
         </div>
-      `).join('');\n      
-      viewer.innerHTML = `<div class="st-logs-list">${rows}</div>`;\n    } catch (err) {\n      console.error('Error loading logs:', err);\n      viewer.innerHTML = `<div class="st-logs-error">${esc(t('settings.logs.loadFailed'))}</div>`;\n    }\n  }\n}\n\n/* ================================================================== *\n *  ABOUT\n * ================================================================== */\nfunction tplAbout() {
+      `).join('');
+      
+      viewer.innerHTML = `<div class="st-logs-list">${rows}</div>`;
+    } catch (err) {
+      console.error('Error loading logs:', err);
+      viewer.innerHTML = `<div class="st-logs-error">${esc(t('settings.logs.loadFailed'))}</div>`;
+    }
+  }
+}\n\n/* ================================================================== *\n *  ABOUT\n * ================================================================== */\nfunction tplAbout() {
   const v = _appVersion || '';
   return section(t('settings.topic.about'), '', `
     <div class="st-about">
