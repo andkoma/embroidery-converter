@@ -143,6 +143,52 @@ function findSystemPython() {
 }
 
 /**
+ * Check if a given Python interpreter has pyembroidery installed.
+ * Returns true if `python -c "import pyembroidery"` succeeds.
+ */
+function hasPyembroidery(pythonCmd) {
+  try {
+    const res = spawnSync(pythonCmd, ['-c', 'import pyembroidery'], {
+      encoding: 'utf8',
+      windowsHide: true,
+      timeout: 5000
+    });
+    return res.status === 0;
+  } catch (_) {
+    return false;
+  }
+}
+
+/**
+ * Generate installation instructions based on platform and Python path.
+ */
+function getInstallInstructions(pythonCmd) {
+  const isWin = process.platform === 'win32';
+  const isMac = process.platform === 'darwin';
+  
+  let instructions = '';
+  
+  if (pythonCmd.includes('homebrew') || pythonCmd.includes('/opt/homebrew/')) {
+    // Homebrew Python on macOS
+    instructions = 'brew install python@3.9\n' +
+                   'python3 -m pip install pyembroidery';
+  } else if (pythonCmd.includes('miniconda') || pythonCmd.includes('anaconda')) {
+    // Conda environments
+    instructions = 'conda install -c conda-forge pyembroidery';
+  } else if (isWin) {
+    // Windows
+    instructions = 'python -m pip install pyembroidery\n' +
+                   'or: pip install pyembroidery';
+  } else {
+    // Generic Unix/macOS
+    instructions = 'python3 -m pip install pyembroidery\n' +
+                   'or: pip3 install pyembroidery';
+  }
+  
+  return instructions;
+}
+
+/**
  * Returns { command, baseArgs } describing how to invoke the backend.
  * Bundled binary:   command=<binary>,          baseArgs=[]
  * System python:    command=<python>,          baseArgs=[convert.py]
@@ -177,6 +223,19 @@ function runBackend(subcommand, payload) {
       return;
     }
 
+    // If using system Python, verify pyembroidery is installed
+    if (backend.mode === 'system-python' && !hasPyembroidery(backend.command)) {
+      const instructions = getInstallInstructions(backend.command);
+      resolve({
+        success: false,
+        error:
+          `Python found at ${backend.command}, but pyembroidery is not installed.\n\n` +
+          `To install pyembroidery, run:\n${instructions}`,
+        warnings: [],
+      });
+      return;
+    }
+
     const args = [...backend.baseArgs, subcommand, JSON.stringify(payload || {})];
     let stdout = '';
     let stderr = '';
@@ -194,7 +253,8 @@ function runBackend(subcommand, payload) {
         command: backend.command,
         args: args.slice(0, 2), // Don't log full payload
         arch: process.arch,
-        platform: process.platform
+        platform: process.platform,
+        backendMode: backend.mode
       };
       
       logger?.error('Backend spawn failed', errorDetails);
@@ -273,6 +333,14 @@ function runBackendStream(requestId, subcommand, payload) {
     return null;
   }
 
+  // If using system Python, verify pyembroidery is installed
+  if (backend.mode === 'system-python' && !hasPyembroidery(backend.command)) {
+    const instructions = getInstallInstructions(backend.command);
+    _send({ type: 'error', message: `Python found, but pyembroidery not installed.\n\nRun:\n${instructions}` });
+    _send({ type: 'done', count: 0 });
+    return null;
+  }
+
   const args = [...backend.baseArgs, subcommand, JSON.stringify(payload || {})];
   let child;
   try {
@@ -284,7 +352,8 @@ function runBackendStream(requestId, subcommand, payload) {
       errno: e.errno,
       command: backend.command,
       arch: process.arch,
-      platform: process.platform
+      platform: process.platform,
+      backendMode: backend.mode
     };
     logger?.error('Backend streaming spawn failed', errorDetails);
     
@@ -647,6 +716,28 @@ ipcMain.handle('backend:status', async () => {
       arch: process.arch,
       command: backend.command.split('/').pop() // Log just the executable name for privacy
     });
+    
+    // If using system Python, verify pyembroidery is installed before running the test
+    if (backend.mode === 'system-python') {
+      if (!hasPyembroidery(backend.command)) {
+        const instructions = getInstallInstructions(backend.command);
+        const errMsg = `Python found but pyembroidery not installed.\n\nTo install, run:\n${instructions}`;
+        logger.error('Backend missing dependency', {
+          mode: backend.mode,
+          arch: process.arch,
+          pythonCmd: backend.command,
+          error: 'pyembroidery-not-installed'
+        });
+        return {
+          available: false,
+          mode: backend.mode,
+          pythonFound: true,
+          command: backend.command,
+          reason: 'missing-pyembroidery',
+          error: errMsg
+        };
+      }
+    }
     
     // A backend was resolved; confirm the engine actually runs (imports the
     // bundled pyembroidery and returns the format list).
