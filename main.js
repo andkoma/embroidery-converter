@@ -187,7 +187,27 @@ function runBackend(subcommand, payload) {
     try {
       child = spawn(backend.command, args, { windowsHide: true });
     } catch (e) {
-      resolve({ success: false, error: 'Failed to start backend: ' + e.message, warnings: [] });
+      // Log detailed error information for debugging
+      const errorDetails = {
+        message: e.message,
+        code: e.code,
+        errno: e.errno,
+        syscall: e.syscall,
+        command: backend.command,
+        args: args.slice(0, 2), // Don't log full payload
+        arch: process.arch,
+        platform: process.platform
+      };
+      
+      logger?.error('Backend spawn failed', errorDetails);
+      
+      const friendlyError = e.code === 'ENOENT'
+        ? `Backend not found: ${backend.command}`
+        : e.code === 'EACCES'
+        ? `Permission denied executing: ${backend.command}`
+        : `Failed to start backend: ${e.message} (errno: ${e.errno}, code: ${e.code})`;
+      
+      resolve({ success: false, error: friendlyError, warnings: [] });
       return;
     }
 
@@ -195,6 +215,7 @@ function runBackend(subcommand, payload) {
     child.stderr.on('data', (d) => (stderr += d.toString()));
 
     child.on('error', (e) => {
+      logger?.error('Backend process error', { message: e.message, code: e.code });
       resolve({ success: false, error: 'Backend error: ' + e.message, warnings: [] });
     });
 
@@ -259,7 +280,23 @@ function runBackendStream(requestId, subcommand, payload) {
   try {
     child = spawn(backend.command, args, { windowsHide: true });
   } catch (e) {
-    _send({ type: 'error', message: 'Failed to start backend: ' + e.message });
+    const errorDetails = {
+      message: e.message,
+      code: e.code,
+      errno: e.errno,
+      command: backend.command,
+      arch: process.arch,
+      platform: process.platform
+    };
+    logger?.error('Backend streaming spawn failed', errorDetails);
+    
+    const friendlyError = e.code === 'ENOENT'
+      ? `Backend not found: ${backend.command}`
+      : e.code === 'EACCES'
+      ? `Permission denied executing: ${backend.command}`
+      : `Failed to start backend: ${e.message} (errno: ${e.errno}, code: ${e.code})`;
+    
+    _send({ type: 'error', message: friendlyError });
     _send({ type: 'done', count: 0 });
     return null;
   }
@@ -285,6 +322,7 @@ function runBackendStream(requestId, subcommand, payload) {
   });
 
   child.on('error', (e) => {
+    logger?.error('Backend process streaming error', { message: e.message, code: e.code });
     _send({ type: 'error', message: 'Backend process error: ' + e.message });
   });
 
