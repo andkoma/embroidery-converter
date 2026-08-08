@@ -106,7 +106,10 @@ function pythonCandidates() {
     return list;
   }
   // macOS + Linux
-  const list = ['python3', 'python'];
+  // Try these in order: python3 first (most common), then versioned variants,
+  // then generic 'python' as fallback. Versioned variants (python3.9, python3.10)
+  // may be installed in PATH especially on x64 Macs.
+  const list = ['python3', 'python3.12', 'python3.11', 'python3.10', 'python3.9', 'python'];
   const abs = [
     '/usr/bin/python3',
     '/usr/local/bin/python3',
