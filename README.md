@@ -16,7 +16,7 @@ supports 80+ embroidery formats.
 | Platform | Download |
 |----------|----------|
 | 🍎 **macOS (Apple Silicon M1/M2/M3/M4)** | [Download arm64.dmg](https://github.com/andkoma/embroidery-converter/releases/latest) |
-| 🍎 **macOS (Intel)** | [Download x64.dmg](https://github.com/andkoma/embroidery-converter/releases/latest) |
+| 🍎 **macOS (Intel)** | [Download x64.dmg](https://github.com/andkoma/embroidery-converter/releases/latest) — [Setup Guide](./MACOS_X64_SETUP.md) |
 | 🪟 **Windows (11/10)** | [Download Setup.exe](https://github.com/andkoma/embroidery-converter/releases/latest) |
 
 👉 **[See all versions & detailed instructions](./DOWNLOADS.md)**
