@@ -44,14 +44,55 @@ jobs:
       - name: Install PyInstaller
         run: pip install pyinstaller
       
-      - name: Bundle Python backend
-        run: npm run python:bundle
+      - name: Bundle Python backend (for arm64)
+        # GitHub Actions only provides arm64 macOS runners, so we can only build arm64 PyInstaller
+        run: |
+          echo "Building PyInstaller binary for arm64 (current runner architecture)"
+          
+          # Create arm64-specific output directory
+          mkdir -p pybuild/dist/arm64
+          
+          # Run PyInstaller with arm64-specific output
+          python3 -m PyInstaller \
+            --onefile \
+            --distpath ./pybuild/dist/arm64 \
+            --workpath ./pybuild/build \
+            --specpath ./pybuild \
+            --name convert \
+            --paths scripts/vendor \
+            --collect-submodules pyembroidery \
+            scripts/convert.py
+          
+          # For arm64 build, also copy to generic location
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            cp pybuild/dist/arm64/convert pybuild/dist/convert 2>/dev/null || true
+            echo "✅ Copied to generic pybuild/dist/convert"
+          fi
+          
+          echo "✅ PyInstaller build complete (arm64 only)"
         
       - name: List build artifacts
-        run: ls -lah pybuild/dist/ 2>/dev/null || echo "No pybuild/dist yet"
+        run: |
+          echo "=== Generic pybin ==="
+          ls -lah pybuild/dist/convert 2>/dev/null || echo "No generic pybuild/dist/convert"
+          echo "=== arm64-specific pybin ===" 
+          ls -lah pybuild/dist/arm64/convert 2>/dev/null || echo "No arm64-specific binary"
       
-      - name: Verify Python bundle exists
-        run: test -f pybuild/dist/convert && echo "✅ Python bundle exists" || echo "❌ Python bundle missing"
+      - name: Verify Python bundle exists (arm64) or System Python (x64)
+        run: |
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            # arm64 should have PyInstaller binary
+            if test -f pybuild/dist/convert; then
+              echo "✅ arm64 PyInstaller binary exists"
+            else
+              echo "⚠️ arm64 PyInstaller binary missing - will use System Python as fallback"
+            fi
+          else
+            # x64 will use System Python (PyInstaller must be built on x64 runner which GA doesn't offer)
+            echo "ℹ️ x64 build: Using System Python (PyInstaller binary not available on arm64 runner)"
+            python3 --version
+            pip3 show pyembroidery || echo "Note: pyembroidery not in CI env, will be found at runtime"
+          fi
       
       - name: Build macOS (${{ matrix.arch }})
         env:

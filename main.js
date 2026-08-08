@@ -36,29 +36,27 @@ function resourcePath(...p) {
 
 function findBundledBinary() {
   const exe = process.platform === 'win32' ? 'convert.exe' : 'convert';
-  const candidate = resourcePath('pybin', exe);
+  const arch = process.arch; // arm64 or x64
   
-  // Try primary location
-  if (fs.existsSync(candidate)) {
-    return candidate;
-  }
-  
-  // For macOS, try architecture-specific locations
+  // Try architecture-specific location first (recommended for multi-arch builds)
   if (process.platform === 'darwin') {
-    const arch = process.arch; // arm64 or x64
     const archCandidate = resourcePath('pybin', arch, exe);
     if (fs.existsSync(archCandidate)) {
       return archCandidate;
     }
-    
-    // Log architecture mismatch only in debug mode
+  }
+  
+  // Fall back to primary location (for single-arch builds)
+  const candidate = resourcePath('pybin', exe);
+  if (fs.existsSync(candidate)) {
+    // Warn if architecture mismatch is likely
     if (process.env.DEBUG) {
-      logger?.info('Architecture-specific binary not found', {
-        arch,
-        expected: candidate,
-        tried: archCandidate
+      logger?.warn('Using generic pybin/convert - architecture-specific binary not found', {
+        expected: arch,
+        note: 'This may fail on x64 if binary is arm64'
       });
     }
+    return candidate;
   }
   
   return null;
