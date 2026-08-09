@@ -18,6 +18,22 @@ const isDev = process.argv.includes('--dev') || !app.isPackaged;
 
 let mainWindow = null;
 
+/**
+ * Detect macOS "App Translocation" (Gatekeeper Path Randomization).
+ * This happens when a quarantined app is launched directly from its
+ * download location (e.g. straight out of a mounted DMG) instead of being
+ * moved to /Applications first. macOS then runs the app from a random,
+ * read-only path like:
+ *   /private/var/folders/.../AppTranslocation/<uuid>/d/MyApp.app
+ * From that read-only, per-launch-randomized location, some macOS security
+ * checks (kernel-level "AppleSystemPolicy") can outright refuse to launch
+ * child helper processes, which manifests as: the app appears to start
+ * (Dock icon bounces) but no window is ever created and no error is shown.
+ */
+function isRunningTranslocated() {
+  return process.platform === 'darwin' && process.execPath.includes('/AppTranslocation/');
+}
+
 /* ------------------------------------------------------------------ *
  *  Python / backend resolution
  *
@@ -650,6 +666,29 @@ app.whenReady().then(() => {
   try {
     // Initialize logging system
     logger.init(app.getPath('userData'));
+
+    // Detect App Translocation FIRST, before anything else. Running from a
+    // translocated read-only path can cause macOS to silently refuse to
+    // spawn our renderer/GPU helper processes (Dock icon bounces forever,
+    // no window, no error). Tell the user how to fix it instead of hanging.
+    if (isRunningTranslocated()) {
+      logger.error('App is running translocated (launched directly from DMG/download, not /Applications)', {
+        execPath: process.execPath
+      });
+      dialog.showMessageBoxSync({
+        type: 'warning',
+        title: 'Embroidery Converter',
+        message: 'Bitte zuerst in den Programme-Ordner verschieben',
+        detail: 'Diese App wurde direkt aus dem Installations-Image (DMG) gestartet. ' +
+          'macOS blockiert dabei einige interne Prozesse, wodurch die App hängen bleiben kann.\n\n' +
+          'Bitte ziehe "Embroidery Converter" per Drag & Drop in den Programme-Ordner (Applications) ' +
+          'und starte die App von dort erneut.',
+        buttons: ['OK']
+      });
+      app.exit(1);
+      return;
+    }
+
     logger.info('=== Application started ===', {
       version: app.getVersion(),
       platform: process.platform,

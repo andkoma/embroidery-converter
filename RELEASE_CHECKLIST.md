@@ -87,6 +87,34 @@ Die App benötigt diese Entitlements für korrekte Funktionalität:
 <key>com.apple.security.network.server</key>
 ```
 
+### 4. App Translocation — "App hängt beim Start, kein Fenster erscheint" (v1.2.45)
+
+**Problem:** Nutzer meldeten: Gatekeeper-Dialog erscheint korrekt (kein "beschädigt"-Fehler mehr), aber danach hängt die App beim Start — Dock-Icon bounct dauerhaft, kein Fenster wird je aufgebaut, keine Fehlermeldung.
+
+**Root Cause (verifiziert durch Reproduktion + Kernel-Log-Analyse):**
+macOS führt **App Translocation** ("Gatekeeper Path Randomization") durch, wenn eine unter Quarantäne stehende App **direkt aus dem gemounteten DMG heraus gestartet wird**, statt sie vorher in den `Programme`-Ordner zu ziehen. Die App läuft dann von einem zufälligen, schreibgeschützten Pfad wie:
+```
+/private/var/folders/.../AppTranslocation/<uuid>/d/MeineApp.app
+```
+Von dort aus kann der Kernel (`AppleSystemPolicy`, Teil von Gatekeeper) das Starten von Kind-Prozessen (Renderer/GPU-Helper) verweigern:
+```
+kernel: (AppleSystemPolicy) ASP: Security policy would not allow process: <pid>, .../AppTranslocation/.../MeineApp.app/Contents/MacOS/MeineApp
+```
+Das äußere Electron-Hauptprozess läuft weiter (daher bounct das Dock-Icon), aber es wird nie ein Fenster erzeugt, weil der Renderer-Helper-Prozess nicht starten darf. Es gibt dabei **keinen Crash-Report** und **keine Fehlermeldung** — der Prozess hängt einfach lautlos.
+
+**Lösung (mehrschichtig, da die OS-Blockade selbst nicht durch App-Code umgangen werden kann):**
+1. **DMG-Layout mit explizitem "Programme"-Alias** (`build.dmg.contents` in `package.json`) — zeigt App-Icon und Applications-Verknüpfung nebeneinander, motiviert Nutzer zum Drag & Drop statt direktem Start aus dem DMG.
+2. **Laufzeit-Erkennung in `main.js`** (`isRunningTranslocated()`): Prüft `process.execPath` auf `/AppTranslocation/` und zeigt — falls die App diesen Punkt überhaupt erreicht (d.h. der Gatekeeper-Dialog wurde beantwortet) — einen klaren Hinweisdialog statt lautlos zu hängen.
+3. **`afterSign.js` signiert von innen nach außen, NIE mit `--deep`**: Apples `codesign`-Dokumentation warnt explizit, dass `--deep` "nur für Testzwecke" gedacht ist und bei komplexen Bundles (mehrere Helper-Apps + Frameworks wie bei Electron) inkonsistente Signaturen erzeugen kann. Stattdessen: zuerst alle `.framework`- und Helper-`.app`-Bundles einzeln signieren, dann das äußere App-Bundle zuletzt.
+
+**Wichtig für Nutzer-Dokumentation:** Immer explizit kommunizieren: *"Ziehe die App in den Programme-Ordner, bevor du sie öffnest — starte sie nicht direkt aus dem Installations-Fenster."*
+
+**Checklist:**
+- ✅ `dmg.contents` in `package.json` enthält Applications-Alias
+- ✅ `main.js` erkennt und meldet App Translocation statt zu hängen
+- ✅ `afterSign.js` nutzt kein `--deep`, signiert stattdessen Frameworks/Helper einzeln zuerst
+- ✅ Reproduktion getestet: `xattr -w com.apple.quarantine "0081;00000000;Chrome;" App.app && open App.app`
+
 ---
 
 ## 📋 Release Checklist
@@ -99,7 +127,8 @@ Die App benötigt diese Entitlements für korrekte Funktionalität:
   - [ ] `version` korrekt aktualisiert
   - [ ] `afterSign` ist auf **globaler Ebene** (nicht in `mac` section)
   - [ ] `hardenedRuntime: true` in `mac` section
-  - [ ] `signingIdentity: "-"` in `mac` section
+  - [ ] `identity: null` in `mac` section (NICHT `signingIdentity` — diese Property existiert nicht)
+  - [ ] `dmg.contents` enthält Applications-Alias (verhindert App Translocation)
   - [ ] Keine Platform-Hooks in Platform-spezifischen Sections (außer `afterSign` auf global)
 - [ ] Verify Entitlements-Datei existiert: `build/entitlements.mac.plist`
 - [ ] Verify GitHub Secrets konfiguriert: `GH_TOKEN` (für Release-Upload)
@@ -166,6 +195,7 @@ git push origin v1.2.43
 | "Release bereits vorhanden" | Tag Überschreiben nicht erlaubt | Nutze `overwrite: true` in gh-release action |
 | x64 findet Python nicht | Nicht alle `python3.X` Varianten durchsucht | Update `pythonCandidates()` mit versioned variants |
 | App zeigt "No Python" Error | System Python hat pyembroidery nicht | Add pre-flight check + Installation-Anleitung |
+| App hängt beim Start, Dock-Icon bounct, kein Fenster (v1.2.45) | App Translocation: direkt aus DMG gestartet statt aus /Applications; Kernel blockiert Helper-Prozesse | DMG-Layout mit Applications-Alias + Laufzeit-Erkennung `isRunningTranslocated()` + kein `--deep` beim Signieren |
 
 ---
 

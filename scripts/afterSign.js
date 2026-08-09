@@ -2,6 +2,28 @@ const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
+/**
+ * Sign a single file/bundle with an ad-hoc identity ("-"), non-deep.
+ * `--deep` is intentionally NEVER used here: Apple's codesign documentation
+ * explicitly warns it is "for testing purposes only" on complex bundles,
+ * because it can produce inconsistent signatures on nested code. For a
+ * multi-process app like Electron (Frameworks + several Helper.app bundles),
+ * a bad --deep signature manifests as the OS being unable to validate/exec
+ * a nested helper (e.g. the crashpad_handler or a renderer Helper.app) once
+ * the bundle is re-validated from scratch - which happens whenever macOS
+ * "translocates" a quarantined app (i.e. launched directly from a mounted
+ * DMG instead of /Applications). Symptom: main process starts, dock icon
+ * bounces, but no window ever appears because the child process it is
+ * waiting on failed to launch.
+ *
+ * The correct approach (and what electron-builder itself does when given a
+ * real identity) is to sign nested code first, then the enclosing bundle.
+ */
+function signOne(targetPath, entitlementsPath) {
+  const cmd = `codesign --force --options=runtime --timestamp=none -s - --entitlements "${entitlementsPath}" "${targetPath}"`;
+  execSync(cmd, { stdio: 'inherit' });
+}
+
 module.exports = async function(context) {
   // Use the BUILD TARGET platform (context.electronPlatformName), not the host
   // process.platform - they differ when cross-building (e.g. Windows target on a macOS host).
@@ -10,7 +32,7 @@ module.exports = async function(context) {
     return;
   }
 
-  console.log('🔐 afterSign hook: Applying entitlements to Electron app');
+  console.log('🔐 afterSign hook: Signing Electron app (inside-out, no --deep)');
 
   // Determine the app path from context
   let electronApp;
@@ -48,16 +70,48 @@ module.exports = async function(context) {
   }
 
   try {
-    // Re-apply ad-hoc signature with entitlements after electron-builder signed it
-    console.log('  • Applying entitlements with ad-hoc signature...');
-    const signCmd = `codesign --force --deep --strict --options=runtime -s - --entitlements "${entitlementsPath}" "${electronApp}"`;
-    execSync(signCmd, { stdio: 'inherit' });
-    console.log('  ✓ Ad-hoc signature applied');
-    
-    // Verify the signature
+    const frameworksDir = path.join(electronApp, 'Contents', 'Frameworks');
+
+    // 1. Sign the bundled PyInstaller Python binary, if present (extraResources/pybin).
+    //    It's a plain executable spawned as a subprocess, not exec'd by the OS at
+    //    app launch, but signing it individually avoids library-validation issues.
+    const resourcesDir = path.join(electronApp, 'Contents', 'Resources');
+    const pybinDir = path.join(resourcesDir, 'pybin');
+    if (fs.existsSync(pybinDir)) {
+      const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).forEach((entry) => {
+        const p = path.join(dir, entry.name);
+        if (entry.isDirectory()) return walk(p);
+        // Only executables need a signature; skip data files.
+        if (entry.name === 'convert' || entry.name === 'convert.exe') {
+          console.log(`  • Signing bundled binary: ${path.relative(electronApp, p)}`);
+          signOne(p, entitlementsPath);
+        }
+      });
+      walk(pybinDir);
+    }
+
+    // 2. Sign nested Frameworks (.framework) and Helper apps (.app) individually,
+    //    BEFORE signing the outer bundle (Apple's required inside-out order).
+    if (fs.existsSync(frameworksDir)) {
+      for (const entry of fs.readdirSync(frameworksDir)) {
+        if (entry.endsWith('.framework') || entry.endsWith('.app')) {
+          const p = path.join(frameworksDir, entry);
+          console.log(`  • Signing nested component: ${entry}`);
+          signOne(p, entitlementsPath);
+        }
+      }
+    }
+
+    // 3. Finally, sign the outer app bundle (references the already-signed
+    //    nested code via their existing signatures - no --deep needed/wanted).
+    console.log('  • Signing outer app bundle...');
+    signOne(electronApp, entitlementsPath);
+    console.log('  ✓ Ad-hoc signature applied (inside-out)');
+
+    // Verify the signature, including nested code (--deep is safe for verification).
     console.log('  • Verifying signature...');
-    const verifyCmd = `codesign -dv "${electronApp}"`;
-    execSync(verifyCmd, { stdio: 'inherit' });
+    execSync(`codesign --verify --deep --strict -v "${electronApp}"`, { stdio: 'inherit' });
+    execSync(`codesign -dv "${electronApp}"`, { stdio: 'inherit' });
     console.log('  ✓ Signature verified');
     
     console.log('✅ afterSign hook complete');
