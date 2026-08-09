@@ -32,10 +32,10 @@ The issue was in **`package.json` build configuration**:
 ### 1. Fixed `package.json` Configuration
 
 ```json
-// ✅ CORRECT
-"afterSign": "scripts/afterSign.js",    // ← Global hook, script checks platform
+// ✅ CORRECT (electron-builder schema)
 "mac": {
   "target": ["dmg"],
+  "afterSign": "scripts/afterSign.js",  // ← In mac section (platform-specific hook)
   "hardenedRuntime": true,              // ← Runtime security enabled
   "gatekeeperAssess": false,
   "entitlements": "build/entitlements.mac.plist",
@@ -45,14 +45,21 @@ The issue was in **`package.json` build configuration**:
 ```
 
 **Key Changes:**
-- `afterSign` on **global level** (electron-builder schema requirement)
+- `afterSign` in **`mac` section** (electron-builder macOS-specific hook)
 - `hardenedRuntime: true` → enables runtime security features
 - `signingIdentity: "-"` → explicitly enables ad-hoc signing
-- Script itself checks `process.platform !== 'darwin'` and skips on other platforms
+- Windows/Linux builds nicht beeinträchtigt (afterSign nur auf macOS aktiv)
+
+**Why this works:**
+- electron-builder defines `afterSign` als macOS-spezifischen Hook
+- Hook wird NUR während macOS-Builds aufgerufen
+- Windows und Linux bauen ohne Fehler
 
 ### 2. Enhanced `scripts/afterSign.js`
 
-The script now:
+Since `afterSign` is now in the `mac` section, the script:
+- Is **only called during macOS builds** (electron-builder guarantee)
+- Still checks `process.platform !== 'darwin'` as defensive programming
 - Correctly identifies `context.electronApp` (afterSign hook parameter)
 - Applies ad-hoc signature with `--strict --options=runtime` flags
 - Embeds entitlements in the code signature

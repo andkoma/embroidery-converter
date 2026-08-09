@@ -9,16 +9,16 @@ Dieses Dokument dokumentiert wichtige Erkenntnisse aus Releases und bietet eine 
 **Problem (v1.2.43):** App zeigte "beschädigte Software" Dialog statt zu starten.
 
 **Root Cause:**
-- `afterSign` Hook war initially auf globaler Ebene mit Wert `null`
-- `afterPack` war statt `afterSign` konfiguriert
+- `afterSign` Hook war initial disabled (`null`)
+- `afterPack` wurde statt `afterSign` verwendet
 - `hardenedRuntime: false` war zu schwach
 
 **Lösung (korrekt):**
 ```json
 {
-  "afterSign": "scripts/afterSign.js",   // ← Global level (electron-builder requirement)
   "mac": {
     "hardenedRuntime": true,
+    "afterSign": "scripts/afterSign.js",      // ← In mac section (platform-specific hook)
     "entitlements": "build/entitlements.mac.plist",
     "entitlementsInherit": "build/entitlements.mac.plist",
     "signingIdentity": "-"
@@ -27,42 +27,39 @@ Dieses Dokument dokumentiert wichtige Erkenntnisse aus Releases und bietet eine 
 ```
 
 **Key Points:**
-- ✅ `afterSign` muss auf **globaler Ebene** sein (electron-builder Schema)
-- ✅ Das Script prüft selbst `process.platform !== 'darwin'` und skippt auf anderen Plattformen
+- ✅ `afterSign` muss in `mac` section sein (electron-builder macOS-specific hook)
 - ✅ `hardenedRuntime: true` ist erforderlich für Runtime-Entitlements
 - ✅ `signingIdentity: "-"` für ad-hoc Signing
-- ❌ Niemals `"afterSign": null` verwenden
-- ❌ Niemals `afterSign` in `mac` section packen (violates electron-builder schema)
+- ❌ `afterSign` NICHT auf globaler Ebene (würde Windows beeinflussen)
+- ❌ Niemals `"afterSign": null`
 
 ### 2. Platform-Spezifische Konfiguration
 
-**Problem (v1.2.43):** Versuch, `afterSign` in `mac` section zu packen brach electron-builder Config.
+**Problem (v1.2.43):** Windows-Build fehlgeschlagen, weil `afterSign` auf globaler Ebene war.
 
 **Lösung:** 
-Hooks wie `afterSign` müssen auf **globaler Ebene** sein (electron-builder Schema). Das Script selbst muss die Plattform prüfen:
+Platform-spezifische Hooks gehören in Platform-spezifische Sections laut electron-builder Schema:
 
 ```json
-// ✅ CORRECT - Global level, script checks platform
-"afterSign": "scripts/afterSign.js",
-
-// Script checks internally:
-if (process.platform !== 'darwin') {
-  console.log('Not macOS, skipping');
-  return;
-}
-```
-
-**❌ WRONG - Platform-spezifische Hooks in Sections:**
-```json
+// ✅ CORRECT - afterSign in mac section (electron-builder macOS-specific hook)
 "mac": {
-  "afterSign": "scripts/afterSign.js"  // ← Invalid! violates electron-builder schema
+  "afterSign": "scripts/afterSign.js",  // ← Only in mac section
+  "hardenedRuntime": true,
+  // ...
+}
+
+// ❌ WRONG - Global level affects all platforms
+"build": {
+  "afterSign": "scripts/afterSign.js",  // ← Would break Windows!
+  "mac": { ... },
+  "win": { ... }
 }
 ```
 
 **Checklist:**
-- ✅ Verify `afterSign` ist auf **globaler Ebene** (nicht in `mac` section)
-- ✅ Verify `afterSign` Script prüft `process.platform !== 'darwin'` am Anfang
-- ✅ Verify Windows und Linux bauen **ohne Fehler** (Script skippt auf diesen Plattformen)
+- ✅ Verify `afterSign` ist in `mac` section (nicht global)
+- ✅ Verify Windows section hat KEINE macOS-Hooks
+- ✅ Verify Windows und Linux bauen **ohne Fehler**
 
 ### 3. Required macOS Entitlements
 
@@ -164,9 +161,9 @@ git push origin v1.2.43
 
 | Fehler | Ursache | Lösung |
 |--------|--------|--------|
-| "beschädigte Software" Dialog | Ungültige Code-Signatur | `afterSign` auf globaler Ebene, `hardenedRuntime: true` |
-| "Invalid configuration object" (Windows) | `afterSign` in `mac` section | Move `afterSign` auf globale Ebene, Script prüft Platform selbst |
-| Windows-Build fehlgeschlagen | `afterSign` Script crasht auf Windows | Füge `if (process.platform !== 'darwin') return;` am Anfang ein |
+| "beschädigte Software" Dialog | Ungültige Code-Signatur | `afterSign` in `mac` section, `hardenedRuntime: true` |
+| "Invalid configuration object" (Windows) | `afterSign` auf globaler Ebene | Move `afterSign` in `mac` section |
+| Windows-Build fehlgeschlagen | `afterSign` auf globaler Ebene aufgerufen | `afterSign` ist macOS-specific, gehört in `mac` section |
 | "Release bereits vorhanden" | Tag Überschreiben nicht erlaubt | Nutze `overwrite: true` in gh-release action |
 | x64 findet Python nicht | Nicht alle `python3.X` Varianten durchsucht | Update `pythonCandidates()` mit versioned variants |
 | App zeigt "No Python" Error | System Python hat pyembroidery nicht | Add pre-flight check + Installation-Anleitung |
