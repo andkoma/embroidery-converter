@@ -76,13 +76,13 @@ check(pkg.build && typeof pkg.build === 'object',
       'Build configuration exists');
 
 if (pkg.build) {
-  // afterSign MUST be in mac section (electron-builder mac-specific hook)
-  check(pkg.build.mac?.afterSign === 'scripts/afterSign.js', 
-        'afterSign: "scripts/afterSign.js" (in mac section - platform-specific hook)', true);
+  // afterSign MUST be on global level (electron-builder hook, applies to all platforms;
+  // the script itself checks process.platform and skips on non-macOS)
+  check(pkg.build.afterSign === 'scripts/afterSign.js', 
+        'afterSign: "scripts/afterSign.js" (on global level - not a mac-only schema property)', true);
 
-  // afterSign should NOT be on global level
-  check(!pkg.build.hasOwnProperty('afterSign') || pkg.build.afterSign === null, 
-        'afterSign is NOT on global level (mac-specific, belongs in mac section only)', true);
+  check(!pkg.build.mac?.afterSign, 
+        'afterSign is NOT inside mac section (invalid schema property there)', true);
 
   // mac section exists
   check(pkg.build.mac && typeof pkg.build.mac === 'object', 
@@ -92,9 +92,15 @@ if (pkg.build) {
     // macOS required settings
     check(pkg.build.mac.hardenedRuntime === true, 
           'hardenedRuntime: true (required for code signing)');
-    
-    check(pkg.build.mac.signingIdentity === '-', 
-          'signingIdentity: "-" (ad-hoc signing enabled)');
+
+    // "signingIdentity" is NOT a valid mac schema property - the correct name is "identity".
+    // Ad-hoc signing is performed manually in afterSign.js via `codesign -s -`,
+    // so identity must be null to stop electron-builder from attempting its own signing.
+    check(!pkg.build.mac.hasOwnProperty('signingIdentity'), 
+          'mac section does NOT use invalid property "signingIdentity" (use "identity" instead)', true);
+
+    check(pkg.build.mac.identity === null, 
+          'identity: null (disables electron-builder auto-signing; afterSign.js does ad-hoc signing manually)');
     
     check(typeof pkg.build.mac.entitlements === 'string', 
           `entitlements file specified: ${pkg.build.mac.entitlements || 'MISSING'}`);
@@ -108,7 +114,7 @@ if (pkg.build) {
         'win section exists', true);
 
   // Windows should NOT have macOS-specific properties
-  check(!pkg.build.win.hardenedRuntime && !pkg.build.win.signingIdentity, 
+  check(!pkg.build.win.hardenedRuntime && !pkg.build.win.signingIdentity && !pkg.build.win.identity, 
         'Windows section has no macOS-specific properties');
 }
 
@@ -147,14 +153,33 @@ try {
   check(false, 'electron-builder is NOT installed (run: npm install)', true);
 }
 
+
+
 header('🔍 Code Quality');
 
-// afterSign script should check for macOS
+// afterSign script should check the BUILD TARGET platform, not process.platform
+// (process.platform is the host OS, which differs from the target when cross-building,
+// e.g. building a Windows artifact on a macOS host)
 if (fs.existsSync(afterSignPath)) {
   const script = fs.readFileSync(afterSignPath, 'utf8');
-  check(script.includes('darwin') || script.includes('process.platform'), 
-        'afterSign script checks platform (should exit early on non-macOS)', false);
+  check(script.includes('electronPlatformName'), 
+        'afterSign script checks context.electronPlatformName (target), not process.platform (host)', true);
 }
 
-// Footer with summary
-footer();
+header('🧪 electron-builder Schema Validation');
+
+// Run the SAME schema validation electron-builder itself runs before a build.
+// This is the authoritative check: it catches unknown/misplaced properties
+// (e.g. "signingIdentity" instead of "identity", or hooks in the wrong section)
+// regardless of which platform triggered the build, since electron-builder
+// validates the ENTIRE config object even for single-platform builds.
+(async () => {
+  try {
+    const { validateConfig } = require('app-builder-lib/out/util/config');
+    await validateConfig(pkg.build || {}, () => ({ error: () => {} }));
+    check(true, 'electron-builder accepts the "build" config (matches API schema)');
+  } catch (e) {
+    check(false, `electron-builder REJECTS the "build" config:\n${e.message}`, true);
+  }
+  footer();
+})();

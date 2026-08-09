@@ -3,8 +3,10 @@ const fs = require('fs');
 const path = require('path');
 
 module.exports = async function(context) {
-  if (process.platform !== 'darwin') {
-    console.log('ℹ️  afterSign: Not macOS, skipping');
+  // Use the BUILD TARGET platform (context.electronPlatformName), not the host
+  // process.platform - they differ when cross-building (e.g. Windows target on a macOS host).
+  if (context.electronPlatformName !== 'darwin') {
+    console.log(`ℹ️  afterSign: Target platform is ${context.electronPlatformName}, not macOS, skipping`);
     return;
   }
 

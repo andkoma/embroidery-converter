@@ -32,34 +32,34 @@ The issue was in **`package.json` build configuration**:
 ### 1. Fixed `package.json` Configuration
 
 ```json
-// ✅ CORRECT (electron-builder schema)
-"mac": {
-  "target": ["dmg"],
-  "afterSign": "scripts/afterSign.js",  // ← In mac section (platform-specific hook)
-  "hardenedRuntime": true,              // ← Runtime security enabled
-  "gatekeeperAssess": false,
-  "entitlements": "build/entitlements.mac.plist",
-  "entitlementsInherit": "build/entitlements.mac.plist",
-  "signingIdentity": "-"                // ← Explicit ad-hoc signing
+// ✅ CORRECT (electron-builder schema, verified against app-builder-lib validateConfig)
+{
+  "afterSign": "scripts/afterSign.js",  // ← GLOBAL hook (NOT a mac-only property!)
+  "mac": {
+    "target": ["dmg"],
+    "hardenedRuntime": true,            // ← Runtime security enabled
+    "gatekeeperAssess": false,
+    "entitlements": "build/entitlements.mac.plist",
+    "entitlementsInherit": "build/entitlements.mac.plist",
+    "identity": null                    // ← "identity", NOT "signingIdentity"! null = skip electron-builder's own signing
+  }
 }
 ```
 
 **Key Changes:**
-- `afterSign` in **`mac` section** (electron-builder macOS-specific hook)
+- `afterSign` is a **global hook**, not a `mac`-specific schema property — placing it inside `mac` causes a `ValidationError` on EVERY build (Windows included, since electron-builder validates the whole config regardless of target)
+- `identity: null` (not `signingIdentity: "-"` — that property doesn't exist in the schema) tells electron-builder to skip its own signing; we sign manually in the hook instead
 - `hardenedRuntime: true` → enables runtime security features
-- `signingIdentity: "-"` → explicitly enables ad-hoc signing
-- Windows/Linux builds nicht beeinträchtigt (afterSign nur auf macOS aktiv)
+- Windows/Linux builds unaffected because the **script itself** checks `context.electronPlatformName` and exits early for non-macOS targets
 
 **Why this works:**
-- electron-builder defines `afterSign` als macOS-spezifischen Hook
-- Hook wird NUR während macOS-Builds aufgerufen
-- Windows und Linux bauen ohne Fehler
+- electron-builder's `afterSign` hook is called for every build target; the hook script decides what to do based on `context.electronPlatformName` (the **target** platform, not `process.platform`, which is the **host** OS — important when cross-building, e.g. Windows target on a macOS host)
+- Windows and Linux builds pass schema validation and skip the signing logic entirely
 
 ### 2. Enhanced `scripts/afterSign.js`
 
-Since `afterSign` is now in the `mac` section, the script:
-- Is **only called during macOS builds** (electron-builder guarantee)
-- Still checks `process.platform !== 'darwin'` as defensive programming
+The script:
+- Checks `context.electronPlatformName !== 'darwin'` (target platform) and returns early for non-macOS builds — **not** `process.platform`, which would incorrectly run on any macOS host even when cross-building for Windows
 - Correctly identifies `context.electronApp` (afterSign hook parameter)
 - Applies ad-hoc signature with `--strict --options=runtime` flags
 - Embeds entitlements in the code signature

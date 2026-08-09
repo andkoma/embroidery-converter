@@ -6,60 +6,57 @@ Dieses Dokument dokumentiert wichtige Erkenntnisse aus Releases und bietet eine 
 
 ### 1. macOS Code-Signing & Entitlements
 
-**Problem (v1.2.43):** App zeigte "beschädigte Software" Dialog statt zu starten.
+**Problem (v1.2.43 → v1.2.44):** App zeigte "beschädigte Software" Dialog statt zu starten. Beim Versuch dies zu fixen wurde zusätzlich der Windows-Build kaputt gemacht, weil eine **nicht-existierende Property** (`signingIdentity`) und ein **falsch platzierter Hook** (`afterSign` in `mac`) verwendet wurden.
 
 **Root Cause:**
-- `afterSign` Hook war initial disabled (`null`)
-- `afterPack` wurde statt `afterSign` verwendet
-- `hardenedRuntime: false` war zu schwach
+- `signingIdentity` ist **keine gültige electron-builder Property** — der Schema-Validator lehnt sie ab (egal welche Plattform gebaut wird, da die GESAMTE Config validiert wird). Der korrekte Property-Name ist `identity`.
+- `afterSign` ist ein **globaler Hook** (Top-Level in `build`), **keine** `mac`-spezifische Property. In `mac` platziert, lehnt der Schema-Validator ihn als "unknown property" ab.
+- Der Hook selbst darf nicht `process.platform` (Host-OS) prüfen, sondern `context.electronPlatformName` (Ziel-Plattform des Builds) — sonst schlägt Cross-Building (z.B. Windows-Target auf macOS-Host) fehl.
 
-**Lösung (korrekt):**
+**Lösung (korrekt, verifiziert mit `npx electron-builder --win --dir` und `--mac --dir`):**
 ```json
 {
+  "afterSign": "scripts/afterSign.js",   // ← GLOBAL (electron-builder Hook, nicht mac-spezifisch)
   "mac": {
     "hardenedRuntime": true,
-    "afterSign": "scripts/afterSign.js",      // ← In mac section (platform-specific hook)
+    "identity": null,                    // ← "identity", NICHT "signingIdentity"; null = electron-builder signiert selbst NICHT
     "entitlements": "build/entitlements.mac.plist",
-    "entitlementsInherit": "build/entitlements.mac.plist",
-    "signingIdentity": "-"
-  }
-}
-```
-
-**Key Points:**
-- ✅ `afterSign` muss in `mac` section sein (electron-builder macOS-specific hook)
-- ✅ `hardenedRuntime: true` ist erforderlich für Runtime-Entitlements
-- ✅ `signingIdentity: "-"` für ad-hoc Signing
-- ❌ `afterSign` NICHT auf globaler Ebene (würde Windows beeinflussen)
-- ❌ Niemals `"afterSign": null`
-
-### 2. Platform-Spezifische Konfiguration
-
-**Problem (v1.2.43):** Windows-Build fehlgeschlagen, weil `afterSign` auf globaler Ebene war.
-
-**Lösung:** 
-Platform-spezifische Hooks gehören in Platform-spezifische Sections laut electron-builder Schema:
-
-```json
-// ✅ CORRECT - afterSign in mac section (electron-builder macOS-specific hook)
-"mac": {
-  "afterSign": "scripts/afterSign.js",  // ← Only in mac section
-  "hardenedRuntime": true,
-  // ...
-}
-
-// ❌ WRONG - Global level affects all platforms
-"build": {
-  "afterSign": "scripts/afterSign.js",  // ← Would break Windows!
-  "mac": { ... },
+    "entitlementsInherit": "build/entitlements.mac.plist"
+  },
   "win": { ... }
 }
 ```
 
+```javascript
+// scripts/afterSign.js
+module.exports = async function(context) {
+  // context.electronPlatformName = Ziel-Plattform des Builds (NICHT process.platform!)
+  if (context.electronPlatformName !== 'darwin') {
+    return; // Windows/Linux-Build → Hook überspringen
+  }
+  // Ad-hoc Signing mit codesign -s - (electron-builder signiert wegen identity:null nicht selbst)
+  execSync(`codesign --force --deep --strict --options=runtime -s - --entitlements "..." "..."`);
+};
+```
+
+**Key Points:**
+- ✅ `afterSign` ist ein **globaler Hook** — wird bei JEDEM Build-Target aufgerufen, das Skript selbst entscheidet anhand `context.electronPlatformName`, ob es aktiv wird
+- ✅ `identity: null` deaktiviert electron-builders eigenes Signing (wir signieren manuell im Hook)
+- ✅ `hardenedRuntime: true` ist erforderlich für Runtime-Entitlements
+- ❌ `signingIdentity` existiert NICHT im electron-builder Schema — führt zu `ValidationError` bei JEDEM Build (auch Windows!)
+- ❌ `afterSign` NICHT in `mac` section — führt zu `ValidationError` bei JEDEM Build
+- ❌ Niemals `process.platform` im Hook verwenden — immer `context.electronPlatformName`
+
+### 2. Schema-Validierungsfehler betreffen ALLE Plattformen
+
+**Wichtige Erkenntnis:** electron-builder validiert bei **jedem** Build (egal ob `--win`, `--mac` oder `--linux`) die **komplette** `build`-Konfiguration inkl. aller Plattform-Sections. Ein ungültiges Property in `mac` lässt daher auch den Windows-Build fehlschlagen — nicht nur macOS-Builds.
+
+**Deshalb:** `npm run validate:release` führt jetzt die **echte** electron-builder Schema-Validierung aus (`app-builder-lib/out/util/config` → `validateConfig()`), nicht nur eigene Annahmen. Das ist die einzige zuverlässige Methode, um solche Fehler VOR dem CI-Build zu erkennen.
+
 **Checklist:**
-- ✅ Verify `afterSign` ist in `mac` section (nicht global)
-- ✅ Verify Windows section hat KEINE macOS-Hooks
-- ✅ Verify Windows und Linux bauen **ohne Fehler**
+- ✅ `npm run validate:release` lokal ausführen — führt die echte electron-builder Schema-Prüfung aus
+- ✅ Bei Unsicherheit über eine Property: `npx electron-builder --<platform> --dir` lokal testen (kein Installer, nur Schema + Packaging)
+- ✅ Windows und macOS bauen **ohne Fehler**
 
 ### 3. Required macOS Entitlements
 
@@ -161,9 +158,11 @@ git push origin v1.2.43
 
 | Fehler | Ursache | Lösung |
 |--------|--------|--------|
-| "beschädigte Software" Dialog | Ungültige Code-Signatur | `afterSign` in `mac` section, `hardenedRuntime: true` |
-| "Invalid configuration object" (Windows) | `afterSign` auf globaler Ebene | Move `afterSign` in `mac` section |
-| Windows-Build fehlgeschlagen | `afterSign` auf globaler Ebene aufgerufen | `afterSign` ist macOS-specific, gehört in `mac` section |
+| "beschädigte Software" Dialog | Ungültige Code-Signatur | `afterSign` (global) + `identity: null` + `hardenedRuntime: true` |
+| "Invalid configuration object... unknown property 'signingIdentity'" | `signingIdentity` existiert nicht im Schema | Verwende `identity` statt `signingIdentity` |
+| "Invalid configuration object... unknown property 'afterSign'" (in mac) | `afterSign` ist ein globaler Hook, keine `mac`-Property | `afterSign` auf Top-Level in `build` verschieben |
+| Windows-Build fehlgeschlagen wegen `mac`-Config | electron-builder validiert IMMER die komplette Config | `npm run validate:release` lokal ausführen VOR jedem Tag |
+| `afterSign` läuft auch bei Windows-Build | Hook prüft `process.platform` (Host) statt Ziel-Plattform | Hook muss `context.electronPlatformName` prüfen |
 | "Release bereits vorhanden" | Tag Überschreiben nicht erlaubt | Nutze `overwrite: true` in gh-release action |
 | x64 findet Python nicht | Nicht alle `python3.X` Varianten durchsucht | Update `pythonCandidates()` mit versioned variants |
 | App zeigt "No Python" Error | System Python hat pyembroidery nicht | Add pre-flight check + Installation-Anleitung |

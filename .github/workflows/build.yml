@@ -97,6 +97,7 @@ jobs:
       - name: Build macOS (${{ matrix.arch }})
         env:
           DEBUG: "electron-builder*"
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: npx electron-builder --mac --${{ matrix.arch }} 2>&1 | tee build-output.log
       
       - name: Verify code signature (macOS)
