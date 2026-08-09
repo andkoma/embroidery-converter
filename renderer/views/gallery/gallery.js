@@ -825,8 +825,18 @@ function buildTree() {
   const roots = _managedFolders.filter(mf => !_activeFolderId || mf.id === _activeFolderId);
   for (const mf of roots) {
     const files = _allFiles.filter(f => belongsTo(f.path, mf.path));
+    // Motif-node name for the managed folder itself (alias > basename).
+    const mfName = (mf.alias && mf.alias.trim()) ? mf.alias.trim() : (baseName(mf.path) || mf.path);
     for (const f of files) {
       const rel = dirRelSegments(mf.path, f.path);
+      // A file lying directly inside the managed folder means the managed
+      // folder IS the motif: attach it to a node named after the folder
+      // instead of dumping loose files into the synthetic root.
+      if (rel.length === 0) {
+        if (!root.children.has(mf.path)) root.children.set(mf.path, makeNode(mfName, mf.path));
+        root.children.get(mf.path).files.push(f);
+        continue;
+      }
       let cur = root;
       let curPath = mf.path;
       for (const seg of rel) {
