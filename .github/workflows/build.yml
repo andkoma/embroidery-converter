@@ -99,6 +99,20 @@ jobs:
           DEBUG: "electron-builder*"
         run: npx electron-builder --mac --${{ matrix.arch }} 2>&1 | tee build-output.log
       
+      - name: Verify code signature (macOS)
+        run: |
+          echo "🔍 Checking code signatures in built app..."
+          app_path=$(find release -name "*.app" -type d | head -1)
+          if [ -n "$app_path" ]; then
+            echo "Found app: $app_path"
+            codesign -dv "$app_path" || echo "⚠️ Warning: codesign check returned non-zero"
+            echo ""
+            echo "Checking entitlements:"
+            codesign -d --entitlements - "$app_path" || echo "⚠️ Warning: Could not extract entitlements"
+          else
+            echo "⚠️ No .app found yet (may be inside DMG)"
+          fi
+      
       - name: Save build log
         if: always()
         uses: actions/upload-artifact@v4

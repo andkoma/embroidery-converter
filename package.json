@@ -48,8 +48,7 @@
       }
     ],
     "publish": null,
-    "afterPack": "scripts/afterSign.js",
-    "afterSign": null,
+    "afterSign": "scripts/afterSign.js",
     "win": {
       "target": [
         "nsis"
@@ -68,10 +67,11 @@
       ],
       "icon": "assets/icon.icns",
       "category": "public.app-category.graphics-design",
-      "hardenedRuntime": false,
+      "hardenedRuntime": true,
       "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",
-      "entitlementsInherit": "build/entitlements.mac.plist"
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "signingIdentity": "-"
     },
     "dmg": {
       "title": "Embroidery Converter"
