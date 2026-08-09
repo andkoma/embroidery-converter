@@ -16,7 +16,8 @@
     "build:win": "electron-builder --win",
     "build:mac": "electron-builder --mac",
     "build:all": "electron-builder -mw",
-    "python:bundle": "pyinstaller --onefile --distpath ./pybuild/dist --workpath ./pybuild/build --specpath ./pybuild --name convert --paths scripts/vendor --collect-submodules pyembroidery scripts/convert.py"
+    "python:bundle": "pyinstaller --onefile --distpath ./pybuild/dist --workpath ./pybuild/build --specpath ./pybuild --name convert --paths scripts/vendor --collect-submodules pyembroidery scripts/convert.py",
+    "validate:release": "node scripts/validate-release.js"
   },
   "devDependencies": {
     "electron": "^31.7.7",
@@ -48,7 +49,6 @@
       }
     ],
     "publish": null,
-    "afterSign": "scripts/afterSign.js",
     "win": {
       "target": [
         "nsis"
@@ -71,7 +71,8 @@
       "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
-      "signingIdentity": "-"
+      "signingIdentity": "-",
+      "afterSign": "scripts/afterSign.js"
     },
     "dmg": {
       "title": "Embroidery Converter"
