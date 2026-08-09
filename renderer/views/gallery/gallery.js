@@ -47,9 +47,11 @@ let _managedFolders = [];        // { id, path, recursive, alias }[]
 let _allFiles       = [];        // FileEntry[] (embroidery + documents)
 let _root           = null;      // synthetic tree root
 let _path           = [];        // breadcrumb: array of folder nodes (drill-down)
-let _tags           = {};        // { [folderPath]: { category, tags:[] } }
+let _tags           = {};        // { [motifKey]: { category, tags:[] } }
+let _names          = {};        // { [motifKey]: customName }  (display-only rename)
+let _motifReg       = new Map(); // motifKey -> descriptor (rebuilt each render)
 
-let _markedFolders  = new Set(); // marked motif/folder paths (→ Collection / AI)
+let _markedFolders  = new Set(); // marked motif keys (→ Collection / AI)
 let _selStitch      = new Set(); // selected stitch-file paths (→ Transfer)
 
 let _activeFolderId = null;      // null = all roots; else restrict to one root
@@ -117,6 +119,7 @@ async function mount(container) {
   const settings = await window.api.getSettings();
   _managedFolders = normalizeFolders(settings.managedFolders || []);
   _tags = (settings.galleryTags && typeof settings.galleryTags === 'object') ? settings.galleryTags : {};
+  _names = (settings.galleryMotifNames && typeof settings.galleryMotifNames === 'object') ? settings.galleryMotifNames : {};
 
   renderFolderList();
   wireEvents();
@@ -135,6 +138,7 @@ function unmount() {
   _allFiles = [];
   _root = null;
   _path = [];
+  _motifReg = new Map();
   _markedFolders = new Set();
   _selStitch = new Set();
   _selected = null;
@@ -404,8 +408,18 @@ function injectCSS() {
   cursor: pointer; z-index: 2;
 }
 .gv-card-badge-doc {
-  position: absolute; top: 6px; right: 8px; font-size: 13px; z-index: 2;
+  position: absolute; top: 6px; right: 30px; font-size: 13px; z-index: 2;
 }
+.gv-motif-rename {
+  position: absolute; top: 5px; right: 6px; z-index: 3;
+  width: 20px; height: 20px; padding: 0; line-height: 18px;
+  border: 1px solid var(--border, #e3e7ef); border-radius: 6px;
+  background: var(--panel-bg, #fff); color: var(--muted, #6b7385);
+  font-size: 11px; cursor: pointer; opacity: 0; transition: opacity .12s, color .12s;
+}
+.gv-card:hover .gv-motif-rename { opacity: 1; }
+.gv-motif-rename:hover { color: var(--accent, #5b5bd6); border-color: var(--accent, #5b5bd6); }
+.gv-container-card .gv-folder-thumb { color: var(--muted, #98a0b3); }
 .gv-thumb {
   width: 120px; height: 120px; background: var(--surface, #f4f6fb);
   border: 1px solid var(--border, #e3e7ef); border-radius: 8px;
@@ -819,25 +833,23 @@ function dirRelSegments(base, filePath) {
   return dirSegs.slice(b.length);   // drop base prefix
 }
 
-/** Rebuild the tree from the flat file list, honoring the active-root filter. */
+/**
+ * Rebuild the tree from the flat file list, honoring the active-root filter.
+ * Each managed folder becomes a real, named node under the synthetic root
+ * (so it always carries a human-readable name for motif detection).
+ */
 function buildTree() {
   const root = makeNode('', '__root__');
   const roots = _managedFolders.filter(mf => !_activeFolderId || mf.id === _activeFolderId);
   for (const mf of roots) {
     const files = _allFiles.filter(f => belongsTo(f.path, mf.path));
-    // Motif-node name for the managed folder itself (alias > basename).
+    if (!files.length) continue;
     const mfName = (mf.alias && mf.alias.trim()) ? mf.alias.trim() : (baseName(mf.path) || mf.path);
+    if (!root.children.has(mf.path)) root.children.set(mf.path, makeNode(mfName, mf.path));
+    const mfNode = root.children.get(mf.path);
     for (const f of files) {
       const rel = dirRelSegments(mf.path, f.path);
-      // A file lying directly inside the managed folder means the managed
-      // folder IS the motif: attach it to a node named after the folder
-      // instead of dumping loose files into the synthetic root.
-      if (rel.length === 0) {
-        if (!root.children.has(mf.path)) root.children.set(mf.path, makeNode(mfName, mf.path));
-        root.children.get(mf.path).files.push(f);
-        continue;
-      }
-      let cur = root;
+      let cur = mfNode;
       let curPath = mf.path;
       for (const seg of rel) {
         curPath = curPath + SEP + seg;
@@ -848,22 +860,135 @@ function buildTree() {
     }
   }
   _root = root;
+  _stemCache = new WeakMap();   // invalidate memoized subtree-stem sets
 }
 
-/** The node currently being viewed (root when breadcrumb empty). */
+/* ------------------------------------------------------------------ *
+ *  Bottom-up motif classification
+ *
+ *  A directory is a SINGLE MOTIF when every stitch file within its whole
+ *  subtree shares the same stem (filename without extension) — i.e. it is
+ *  one design, possibly present in several formats and/or hoop-size
+ *  sub-folders. A directory whose subtree holds more than one distinct
+ *  stem is a CONTAINER that groups several motifs.
+ * ------------------------------------------------------------------ */
+let _stemCache = new WeakMap();
+
+/** Memoized set of distinct stems among embroidery files in a subtree. */
+function subtreeStems(node) {
+  if (!node) return new Set();
+  if (_stemCache.has(node)) return _stemCache.get(node);
+  const set = new Set();
+  node.files.forEach(f => { if (isEmb(f)) set.add(stemOf(f)); });
+  node.children.forEach(ch => subtreeStems(ch).forEach(s => set.add(s)));
+  _stemCache.set(node, set);
+  return set;
+}
+
+/** True when the subtree represents exactly one design (one motif). */
+function isSingleMotif(node) {
+  const s = subtreeStems(node);
+  return s.size === 1;
+}
+
+/* ------------------------------------------------------------------ *
+ *  Motif registry  (view-independent index of every motif entry point)
+ *
+ *  Two kinds of motif entry points:
+ *   - 'folder' : a directory that is the top-most single-design folder.
+ *                Its sub-folders (hoop sizes) and files are its sub-assets.
+ *   - 'loose'  : a group of same-stem stitch files lying directly inside a
+ *                container that holds several distinct designs.
+ *  Each motif has a STABLE key so marks, tags and custom names survive a
+ *  rebuild:  folder → the directory path;  loose → path + stem.
+ * ------------------------------------------------------------------ */
+const LOOSE_SEP = '::#motif-stem#::';   // printable, HTML-attr safe, path-unlikely
+function looseKey(containerPath, stem) { return containerPath + LOOSE_SEP + stem; }
+
+/** Custom display name (rename) if set, else the derived fallback. */
+function displayName(key, fallback) {
+  const n = _names[key];
+  return (n && String(n).trim()) ? String(n).trim() : fallback;
+}
+
+function folderMotifDescriptor(node) {
+  return {
+    key: node.path, kind: 'folder', node, path: node.path,
+    name: displayName(node.path, node.name),
+    embFiles: collectEmb(node), docFiles: collectDocs(node),
+  };
+}
+function looseMotifDescriptor(container, stem, files, docs) {
+  const key = looseKey(container.path, stem);
+  return {
+    key, kind: 'loose', container, path: container.path, stem, files,
+    name: displayName(key, stem),
+    embFiles: files, docFiles: docs || [],
+  };
+}
+
+/** Register the loose-design motifs directly inside a container node. */
+function registerLooseMotifs(node) {
+  const loose = node.files.filter(isEmb);
+  if (!loose.length) return;
+  const docs = node.files.filter(isDoc);
+  const byStem = new Map();
+  loose.forEach(f => { const k = stemOf(f); if (!byStem.has(k)) byStem.set(k, []); byStem.get(k).push(f); });
+  byStem.forEach((files, stem) => {
+    const matchDocs = docs.filter(d => stemOf(d) === stem);
+    const d = looseMotifDescriptor(node, stem, files, matchDocs);
+    _motifReg.set(d.key, d);
+  });
+}
+
+/** Rebuild the full motif registry from the current tree. */
+function registerMotifs() {
+  _motifReg = new Map();
+  const visit = (node) => {
+    if (node !== _root && isSingleMotif(node)) {
+      const d = folderMotifDescriptor(node);
+      _motifReg.set(d.key, d);
+      return;                       // do not descend past a motif entry point
+    }
+    if (node !== _root) registerLooseMotifs(node);
+    node.children.forEach(visit);
+  };
+  if (_root) _root.children.forEach(visit);
+}
+
+/** Loose-motif groups (stem → descriptor) directly inside a container. */
+function looseMotifsIn(node) {
+  const loose = node.files.filter(isEmb);
+  const byStem = new Map();
+  loose.forEach(f => { const k = stemOf(f); if (!byStem.has(k)) byStem.set(k, []); byStem.get(k).push(f); });
+  return [...byStem.keys()].map(stem => _motifReg.get(looseKey(node.path, stem))).filter(Boolean);
+}
+
+/**
+ * The node the browser starts at. If a single managed folder is in view and
+ * that folder is a CONTAINER (holds several motifs), descend into it so the
+ * user immediately sees the motifs. If it is itself one motif, stay at the
+ * synthetic root so it renders as a single motif card (folder name = motif).
+ */
+function effectiveRoot() {
+  if (!_root) return null;
+  const kids = [..._root.children.values()];
+  if (kids.length === 1 && !isSingleMotif(kids[0])) return kids[0];
+  return _root;
+}
+
+/** The node currently being viewed (effective root when breadcrumb empty). */
 function currentNode() {
-  return _path.length ? _path[_path.length - 1] : _root;
+  return _path.length ? _path[_path.length - 1] : effectiveRoot();
 }
 
 /** Re-resolve breadcrumb nodes against a freshly built tree (paths persist). */
 function reResolvePath() {
   const newPath = [];
-  let cur = _root;
   for (const old of _path) {
-    const next = cur && cur.children.get(old.path);
+    const next = findNodeByPath(old.path);
     if (!next) break;
     newPath.push(next);
-    cur = next;
   }
   _path = newPath;
 }
@@ -910,6 +1035,7 @@ function findNodeByPath(path) {
  * ------------------------------------------------------------------ */
 function rebuildAndRender() {
   buildTree();
+  registerMotifs();
   reResolvePath();
   renderBreadcrumb();
   renderGrid();
@@ -956,35 +1082,54 @@ function renderGrid() {
   const node = currentNode();
   if (!node) { grid.innerHTML = `<div class="gv-empty-grid">${esc(t('gallery.noFiles'))}</div>`; return; }
 
+  const insideMotif = node !== _root && isSingleMotif(node);
   const subfolders = sortNodes([...node.children.values()], n => n.name, n => collectEmb(n).length);
-  const looseEmb = node.files.filter(isEmb);
-  const docs     = node.files.filter(isDoc);
-
-  // Group loose embroidery files by stem → format variants.
-  const variantMap = new Map();
-  looseEmb.forEach(f => {
-    const k = stemOf(f);
-    if (!variantMap.has(k)) variantMap.set(k, []);
-    variantMap.get(k).push(f);
-  });
-  const variants = sortNodes([...variantMap.entries()].map(([stem, files]) => ({ stem, files })),
-    v => v.stem, v => v.files.reduce((m, f) => m + (f.size || 0), 0));
-
-  if (subfolders.length === 0 && variants.length === 0 && docs.length === 0) {
-    grid.innerHTML = `<div class="gv-empty-grid">${esc(t('gallery.emptyFolder'))}</div>`;
-    return;
-  }
-
+  const docs       = node.files.filter(isDoc);
   const parts = [];
 
-  if (subfolders.length) {
-    parts.push(`<div class="gv-section-label">${esc(t('gallery.folders'))}</div>`);
-    subfolders.forEach(n => parts.push(folderCardHTML(n)));
+  if (insideMotif) {
+    // Inside a single motif → show its sub-assets: hoop-size folders, format
+    // variants and documents. No further motif cards here.
+    const looseEmb = node.files.filter(isEmb);
+    const variantMap = new Map();
+    looseEmb.forEach(f => { const k = stemOf(f); if (!variantMap.has(k)) variantMap.set(k, []); variantMap.get(k).push(f); });
+    const variants = sortNodes([...variantMap.entries()].map(([stem, files]) => ({ stem, files })),
+      v => v.stem, v => v.files.reduce((m, f) => m + (f.size || 0), 0));
+
+    if (!subfolders.length && !variants.length && !docs.length) {
+      grid.innerHTML = `<div class="gv-empty-grid">${esc(t('gallery.emptyFolder'))}</div>`;
+      return;
+    }
+    if (subfolders.length) {
+      parts.push(`<div class="gv-section-label">${esc(t('gallery.hoopSizes'))}</div>`);
+      subfolders.forEach(n => parts.push(plainFolderCardHTML(n)));
+    }
+    if (variants.length) {
+      parts.push(`<div class="gv-section-label">${esc(t('gallery.variants'))}</div>`);
+      variants.forEach(v => parts.push(variantCardHTML(v)));
+    }
+  } else {
+    // Container level → one card per motif (folder motifs + loose-design motifs)
+    // plus plain sub-container folders for deeper browsing.
+    const motifFolders = subfolders.filter(isSingleMotif);
+    const containers   = subfolders.filter(n => !isSingleMotif(n));
+    const looseMotifs  = sortNodes(looseMotifsIn(node), m => m.name, m => (m.embFiles || []).length);
+
+    if (!motifFolders.length && !containers.length && !looseMotifs.length && !docs.length) {
+      grid.innerHTML = `<div class="gv-empty-grid">${esc(t('gallery.emptyFolder'))}</div>`;
+      return;
+    }
+    const allMotifs = motifFolders.map(n => _motifReg.get(n.path)).filter(Boolean).concat(looseMotifs);
+    if (allMotifs.length) {
+      parts.push(`<div class="gv-section-label">${esc(t('gallery.motifs'))}</div>`);
+      allMotifs.forEach(m => parts.push(motifCardHTML(m)));
+    }
+    if (containers.length) {
+      parts.push(`<div class="gv-section-label">${esc(t('gallery.folders'))}</div>`);
+      containers.forEach(n => parts.push(containerCardHTML(n)));
+    }
   }
-  if (variants.length) {
-    parts.push(`<div class="gv-section-label">${esc(t('gallery.designs'))}</div>`);
-    variants.forEach(v => parts.push(variantCardHTML(v)));
-  }
+
   if (docs.length) {
     parts.push(`<div class="gv-section-label">${esc(t('gallery.documents'))}</div>`);
     docs.forEach(d => parts.push(docCardHTML(d)));
@@ -994,52 +1139,91 @@ function renderGrid() {
 
 function renderSearchResults(grid) {
   const q = _searchQuery.toLowerCase();
-  // Gather all motif-level folders (immediate children of roots) + deeper folders.
-  const matches = [];
-  const seen = new Set();
-  const visit = (node) => {
-    node.children.forEach(ch => {
-      const tags = (_tags[ch.path] && _tags[ch.path].tags) || [];
-      const cat  = (_tags[ch.path] && _tags[ch.path].category) || '';
-      const hay = (ch.name + ' ' + tags.join(' ') + ' ' + cat).toLowerCase();
-      if (hay.includes(q) && !seen.has(ch.path)) { seen.add(ch.path); matches.push(ch); }
-      visit(ch);
-    });
-  };
-  if (_root) visit(_root);
+  // Flat search across every motif in the registry (name + tags + category).
+  const matches = [...(_motifReg ? _motifReg.values() : [])].filter(m => {
+    const meta = _tags[m.key] || {};
+    const tags = Array.isArray(meta.tags) ? meta.tags : [];
+    const hay = (m.name + ' ' + (m.stem || '') + ' ' + tags.join(' ') + ' ' + (meta.category || '')).toLowerCase();
+    return hay.includes(q);
+  });
 
   if (!matches.length) {
     grid.innerHTML = `<div class="gv-empty-grid">${esc(t('gallery.noMatches'))}</div>`;
     return;
   }
-  sortNodes(matches, n => n.name, n => collectEmb(n).length);
+  sortNodes(matches, m => m.name, m => (m.embFiles || []).length);
   const parts = [`<div class="gv-section-label">${esc(t('gallery.searchResults'))} (${matches.length})</div>`];
-  matches.forEach(n => parts.push(folderCardHTML(n)));
+  matches.forEach(m => parts.push(motifCardHTML(m)));
   grid.innerHTML = parts.join('');
 }
 
 /* ── Card builders ── */
-function folderCardHTML(node) {
-  const marked = _markedFolders.has(node.path);
-  const pv = firstPreviewFile(node);
-  const preview = (pv && pv.preview) ? renderPreview(pv.preview)
-    : `<span class="gv-folder-thumb"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></span>`;
-  const fmts = formatSet(node);
-  const embCount = collectEmb(node).length;
-  const hasDocs = collectDocs(node).length > 0;
-  const tags = (_tags[node.path] && _tags[node.path].tags) || [];
+const FOLDER_SVG = `<span class="gv-folder-thumb"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></span>`;
 
+function firstPreviewOf(files) {
+  return (files || []).find(f => f.preview) || (files || [])[0] || null;
+}
+
+/**
+ * A motif entry point card (folder-motif OR loose-design motif).
+ * Folder motifs are drillable (data-folder); loose motifs expose per-format
+ * transfer buttons inline. Both are markable (Collection/AI) and renamable.
+ */
+function motifCardHTML(m) {
+  const marked = _markedFolders.has(m.key);
+  const pv = firstPreviewOf(m.embFiles);
+  const preview = (pv && pv.preview) ? renderPreview(pv.preview) : FOLDER_SVG;
+  const fmts = [...new Set((m.embFiles || []).map(extOf))].sort();
+  const hasDocs = (m.docFiles || []).length > 0;
+  const tags = (_tags[m.key] && _tags[m.key].tags) || [];
   const chips = fmts.slice(0, 6).map(e => `<span class="gv-badge">${esc(e)}</span>`).join('')
     + tags.slice(0, 3).map(tg => `<span class="gv-tag-chip">${esc(tg)}</span>`).join('');
+  const isFolder = m.kind === 'folder';
+
+  const actions = (!isFolder)
+    ? `<div class="gv-card-actions">` + (m.embFiles || []).map(f => {
+        const sel = _selStitch.has(f.path) ? ' sel' : '';
+        return `<button class="gv-mini-btn gv-fmt-btn${sel}" data-path="${esc(f.path)}" title="${esc(t('gallery.toggleTransfer'))}">${esc(extOf(f).toUpperCase())}</button>`;
+      }).join('') + `</div>`
+    : '';
+  const count = isFolder
+    ? t('gallery.designCount', { n: (m.embFiles || []).length })
+    : t('gallery.formatCount', { n: (m.embFiles || []).length });
 
   return `
-    <div class="gv-card gv-folder-card" data-folder="${esc(node.path)}">
-      <input type="checkbox" class="gv-card-check gv-folder-check" data-folder="${esc(node.path)}" ${marked ? 'checked' : ''} title="${esc(t('gallery.markMotif'))}"/>
+    <div class="gv-card gv-motif-card${isFolder ? ' gv-folder-card' : ' gv-loose-card'}" data-motif="${esc(m.key)}"${isFolder ? ` data-folder="${esc(m.path)}"` : ''}>
+      <input type="checkbox" class="gv-card-check gv-motif-check" data-key="${esc(m.key)}" ${marked ? 'checked' : ''} title="${esc(t('gallery.markMotif'))}"/>
+      <button class="gv-motif-rename" data-key="${esc(m.key)}" title="${esc(t('gallery.renameMotif'))}">✎</button>
       ${hasDocs ? `<span class="gv-card-badge-doc" title="${esc(t('gallery.hasDocs'))}">📄</span>` : ''}
       <div class="gv-thumb">${preview}</div>
-      <div class="gv-card-name" title="${esc(node.name)}">${esc(node.name)}</div>
-      <div class="gv-card-sub">${esc(t('gallery.designCount', { n: embCount }))}</div>
+      <div class="gv-card-name" title="${esc(m.name)}">${esc(m.name)}</div>
+      <div class="gv-card-sub">${esc(count)}</div>
       <div class="gv-card-chips">${chips}</div>
+      ${actions}
+    </div>`;
+}
+
+/** Plain (non-markable) folder card used for hoop-size sub-folders. */
+function plainFolderCardHTML(node) {
+  const pv = firstPreviewFile(node);
+  const preview = (pv && pv.preview) ? renderPreview(pv.preview) : FOLDER_SVG;
+  const embCount = collectEmb(node).length;
+  return `
+    <div class="gv-card gv-folder-card gv-plain-folder" data-folder="${esc(node.path)}">
+      <div class="gv-thumb">${preview}</div>
+      <div class="gv-card-name" title="${esc(node.name)}">${esc(node.name)}</div>
+      <div class="gv-card-sub">${esc(t('gallery.fileCount', { n: embCount }))}</div>
+    </div>`;
+}
+
+/** Sub-container card (a folder that groups several motifs) → drill only. */
+function containerCardHTML(node) {
+  const motifCount = subtreeStems(node).size;
+  return `
+    <div class="gv-card gv-folder-card gv-container-card" data-folder="${esc(node.path)}">
+      <div class="gv-thumb">${FOLDER_SVG}</div>
+      <div class="gv-card-name" title="${esc(node.name)}">${esc(node.name)}</div>
+      <div class="gv-card-sub">${esc(t('gallery.motifCount', { n: motifCount }))}</div>
     </div>`;
 }
 
@@ -1123,8 +1307,8 @@ function updateBars() {
   }
 }
 
-function toggleFolderMark(path, on) {
-  if (on) _markedFolders.add(path); else _markedFolders.delete(path);
+function toggleMotifMark(key, on) {
+  if (on) _markedFolders.add(key); else _markedFolders.delete(key);
   updateBars();
 }
 function toggleStitch(path) {
@@ -1139,20 +1323,21 @@ function toggleStitch(path) {
 function sendMarkedToCollection() {
   if (_markedFolders.size === 0) return;
   const items = [];
-  _markedFolders.forEach(path => {
-    const node = findNodeByPath(path);
-    if (!node) return;
-    const embFiles = collectEmb(node).map(f => ({
+  _markedFolders.forEach(key => {
+    const m = _motifReg.get(key);
+    if (!m) return;
+    const embFiles = (m.embFiles || []).map(f => ({
       path: f.path, name: baseName(f.name || f.path), ext: extOf(f), mtime: f.mtime, size: f.size,
     }));
-    const docFiles = collectDocs(node).map(f => ({
+    const docFiles = (m.docFiles || []).map(f => ({
       path: f.path, name: baseName(f.name || f.path), ext: extOf(f), mtime: f.mtime, size: f.size,
     }));
-    const meta = _tags[path] || {};
+    const meta = _tags[key] || {};
     items.push({
       kind: 'motif',
-      path,                          // entry level = the motif folder
-      name: node.name,
+      path: key,                     // stable motif identity (folder path or path+stem)
+      folderPath: m.path,            // originating folder
+      name: m.name,
       ext: 'motif',
       files: embFiles,               // contained stitch files (for "open")
       docs: docFiles,
@@ -1306,13 +1491,13 @@ async function classifyMarked() {
   // Ensure previews exist; if not, kick a thumbnail load and bail with a hint.
   const items = [];
   const needThumbs = [];
-  _markedFolders.forEach(path => {
-    const node = findNodeByPath(path);
-    if (!node) return;
-    const pv = firstPreviewFile(node);
+  _markedFolders.forEach(key => {
+    const m = _motifReg.get(key);
+    if (!m) return;
+    const pv = firstPreviewOf(m.embFiles);
     if (pv && pv.preview) {
       const img = rasterize(pv.preview, 256);
-      if (img) items.push({ id: path, image: img });
+      if (img) items.push({ id: key, image: img });
     } else if (pv) {
       needThumbs.push(pv);
     }
@@ -1346,6 +1531,24 @@ async function classifyMarked() {
 async function persistTags() {
   window.store && window.store.set('galleryTags', _tags);
   try { await window.api.setSettings({ galleryTags: _tags }); } catch (_) {}
+}
+
+async function persistNames() {
+  window.store && window.store.set('galleryMotifNames', _names);
+  try { await window.api.setSettings({ galleryMotifNames: _names }); } catch (_) {}
+}
+
+/** Rename a motif's DISPLAY name only — the file-system path is never touched. */
+async function renameMotif(key) {
+  if (!key) return;
+  const m = _motifReg.get(key);
+  const current = _names[key] || (m ? m.name : '');
+  const next = window.prompt(t('gallery.renamePrompt'), current);
+  if (next === null) return;                    // cancelled
+  const trimmed = String(next).trim();
+  if (trimmed) _names[key] = trimmed; else delete _names[key];   // empty → revert to derived
+  await persistNames();
+  rebuildAndRender();
 }
 
 /* ------------------------------------------------------------------ *
@@ -1401,21 +1604,24 @@ function wireEvents() {
   // Grid interactions (delegated)
   const grid = document.getElementById('gv-grid');
   grid?.addEventListener('change', (e) => {
-    const cb = e.target.closest('.gv-folder-check');
-    if (cb) { toggleFolderMark(cb.dataset.folder, cb.checked); e.stopPropagation(); }
+    const cb = e.target.closest('.gv-motif-check');
+    if (cb) { toggleMotifMark(cb.dataset.key, cb.checked); e.stopPropagation(); }
   }, { signal: sig });
   grid?.addEventListener('click', (e) => {
+    // Rename motif (display name only)
+    const ren = e.target.closest('.gv-motif-rename');
+    if (ren) { e.stopPropagation(); renameMotif(ren.dataset.key); return; }
     // Format button → toggle transfer selection
     const fmt = e.target.closest('.gv-fmt-btn');
     if (fmt) { e.stopPropagation(); toggleStitch(fmt.dataset.path); return; }
     // Document open
     const docBtn = e.target.closest('.gv-doc-open');
     if (docBtn) { e.stopPropagation(); openDocModal(docBtn.dataset.doc); return; }
-    // Folder checkbox handled by change
-    if (e.target.closest('.gv-folder-check')) return;
-    // Folder card → drill in
+    // Motif checkbox handled by change
+    if (e.target.closest('.gv-motif-check')) return;
+    // Folder / motif-folder / container card → drill in
     const folderCard = e.target.closest('.gv-folder-card');
-    if (folderCard) {
+    if (folderCard && folderCard.dataset.folder) {
       const node = findNodeByPath(folderCard.dataset.folder);
       if (node) { _path.push(node); _searchQuery = ''; const s = document.getElementById('gv-search'); if (s) s.value = ''; renderBreadcrumb(); renderGrid(); }
       return;
