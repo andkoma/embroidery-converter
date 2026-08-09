@@ -1,6 +1,6 @@
 {
   "name": "embroidery-converter",
-  "version": "1.2.43",
+  "version": "1.2.44",
   "description": "Cross-platform desktop app to convert embroidery stitch files between formats using pyembroidery.",
   "author": {
     "name": "orgware.ai",
