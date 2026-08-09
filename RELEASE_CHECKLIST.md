@@ -272,5 +272,58 @@ npm run build:all
 
 ---
 
+## 5. Python-Erkennung auf macOS x64 (v1.2.47)
+
+**Problem (v1.2.46 → v1.2.47):** Auf macOS x64 wurde installierte Python-Version und embedded pybin nicht erkannt, obwohl system python3 vorhanden war. ARM64-Variante funktionierte problemlos.
+
+**Root Cause:**
+1. **Architektur-Mismatch**: Homebrew-Installationen auf ARM64-Macs (z.B. `/opt/homebrew/bin/python3`) sind ARM64-Binärs. Wenn die App als x64 läuft, kann sie diese ARM64-Pythons nicht ausführen (würde durch Rosetta 2 übersetzt, was bei Sub-Prozess-Spawning nicht funktioniert).
+2. **Unzureichende Kandidaten-Liste**: Die Suchlogik prüfte die richtigen Pfade, aber ohne Architektur-Validierung konnte eine x64-App ein ARM64-Python "finden" und dann beim Spawn fehlschlagen.
+3. **Fehlender x64-PyInstaller-Build in GitHub Actions**: CI/CD baute nur ARM64-PyInstaller, weil GitHub Actions nur ARM64-macOS-Runner anbietet. x64-Builds bekamen keine bundled Binary.
+
+**Lösung (mehrschichtig, v1.2.47):**
+1. **Architektur-Validierung in `isWorkingPython()`** (`main.js`): 
+   - Neue Funktion `isCompatibleArchitecture(cmd)` nutzt `file -b <python>` Befehl
+   - Auf macOS: Prüft ob Binary-Architektur (`arm64` oder `x86_64`) mit `process.arch` übereinstimmt
+   - Auf anderen Plattformen: Annahme von Kompatibilität (einfacher Check)
+   - Filtert ARM64-Pythons automatisch wenn App als x64 läuft
+
+2. **Erweiterte Kandidaten-Liste in `pythonCandidates()`** (`main.js`):
+   - Hinzugefügt: Miniforge-Unterstützung für ARM64 (`~/miniforge3/bin/python3`)
+   - Bessere Dokumentation: `/opt/homebrew/bin/` ist ARM64 (Apple Silicon), `/usr/local/bin/` ist x64 (Intel)
+   - Ungeändert: Alle absoluten Pfade bleibt (werden arch-validiert)
+
+3. **x64-PyInstaller-Build in GitHub Actions**:
+   - `Bundle Python backend` Step nutzt jetzt `arch -x86_64` für x64-Builds
+   - Auf dem ARM64-Runner wird unter Rosetta 2 x64-PyInstaller gebaut
+   - Beide Varianten landen in: `pybuild/dist/arm64/convert` und `pybuild/dist/x64/convert`
+   - electron-builder packt diese in entsprechend konfigurierte `pybin/` Struktur
+
+4. **Neue npm-Befehle für lokale x64-Builds**:
+   - `npm run build:mac:arm64` — nur ARM64
+   - `npm run build:mac:x64` — nur x64  
+   - `npm run build:mac:universal` — Universal Binary (beide Arches)
+   - `npm run python:bundle:x64` — lokal x64-PyInstaller bauen (erfordert `arch -x86_64`)
+
+**Wichtig:** `arch -x86_64` ist nur auf ARM64-Macs verfügbar (übersetzt zu x86_64). Auf echten x64-Macs ist dies nicht nötig.
+
+**Checklist (v1.2.47 Pre-Release):**
+- [ ] `main.js` enthält `isCompatibleArchitecture()` Funktion
+- [ ] `isWorkingPython()` ruft `isCompatibleArchitecture()` auf
+- [ ] `pythonCandidates()` enthält beide Homebrew-Pfade (ARM64 + x64) und Miniforge
+- [ ] `.github/workflows/build.yml` nutzt `arch -x86_64` für x64-Builds
+- [ ] `pybuild/dist/arm64/convert` und `pybuild/dist/x64/convert` existieren nach Build
+- [ ] `package.json` enthält neue `build:mac:*` und `python:bundle:x64` Scripts
+- [ ] Lokales Testen: `npm run build:mac:x64` sollte x64-DMG erzeugen mit x64-Binary
+
+**Validation nach Release:**
+```bash
+# Auf echtem x64-Mac (nicht ARM64 mit Rosetta)
+open <app.dmg>
+# App sollte PyInstaller-Binary oder System-Python finden, nicht fehlschlagen
+```
+
+---
+
 **Last Updated:** 2026-08-09
-**Release Version:** v1.2.43
+**Release Version:** v1.2.47

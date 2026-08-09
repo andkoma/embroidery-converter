@@ -15,8 +15,12 @@
     "build": "electron-builder",
     "build:win": "electron-builder --win",
     "build:mac": "electron-builder --mac",
+    "build:mac:arm64": "electron-builder --mac --arm64",
+    "build:mac:x64": "electron-builder --mac --x64",
+    "build:mac:universal": "electron-builder --mac --universal",
     "build:all": "electron-builder -mw",
     "python:bundle": "pyinstaller --onefile --distpath ./pybuild/dist --workpath ./pybuild/build --specpath ./pybuild --name convert --paths scripts/vendor --collect-submodules pyembroidery scripts/convert.py",
+    "python:bundle:x64": "arch -x86_64 pyinstaller --onefile --distpath ./pybuild/dist-x64 --workpath ./pybuild/build-x64 --specpath ./pybuild --name convert --paths scripts/vendor --collect-submodules pyembroidery scripts/convert.py",
     "validate:release": "node scripts/validate-release.js"
   },
   "devDependencies": {

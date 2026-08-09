@@ -82,14 +82,55 @@ function findBundledBinary() {
 let _cachedPython = undefined; // undefined = not searched yet, null = not found
 
 /**
+ * Check if a Python interpreter's architecture matches the current process.
+ * On macOS, use `file` to inspect the binary and ensure it's native to the
+ * current architecture (not Rosetta2 translated). On other platforms, assume
+ * native execution (Windows uses x64-only, Linux rarely has multi-arch setup).
+ * Returns true if the Python binary is compatible with the current process.
+ */
+function isCompatibleArchitecture(cmd) {
+  if (process.platform !== 'darwin') {
+    // On non-macOS, assume compatibility (no easy way to verify).
+    return true;
+  }
+  
+  try {
+    // Use `file` to inspect the binary. On macOS ARM64, it will show "Mach-O 64-bit executable arm64".
+    // On x64, it will show "Mach-O 64-bit executable x86_64".
+    const res = spawnSync('file', ['-b', cmd], { encoding: 'utf8', windowsHide: true });
+    const output = (res.stdout || '').toLowerCase();
+    
+    const expected = process.arch === 'arm64' ? 'arm64' : 'x86_64';
+    if (!output.includes(expected)) {
+      if (process.env.DEBUG) {
+        logger?.warn(`Python ${cmd} architecture mismatch`, {
+          pythonFile: output,
+          currentArch: process.arch
+        });
+      }
+      return false;
+    }
+    return true;
+  } catch (e) {
+    // If `file` command fails, assume it's compatible (may not be available).
+    return true;
+  }
+}
+
+/**
  * Verify that a given command/path is a working Python 3 interpreter.
- * Returns true only when `--version` reports Python 3.x.
+ * Returns true only when `--version` reports Python 3.x AND the binary
+ * is compatible with the current process architecture.
  */
 function isWorkingPython(cmd) {
   try {
     const res = spawnSync(cmd, ['--version'], { encoding: 'utf8', windowsHide: true });
     const out = ((res.stdout || '') + (res.stderr || '')).trim();
-    return /python\s+3\./i.test(out);
+    if (!/python\s+3\./i.test(out)) {
+      return false;
+    }
+    // Verify architecture compatibility (critical for macOS x64 vs ARM64)
+    return isCompatibleArchitecture(cmd);
   } catch (_) {
     return false;
   }
@@ -101,6 +142,11 @@ function isWorkingPython(cmd) {
  * install locations, because a GUI-launched app on macOS/Windows often does
  * NOT inherit the user's shell PATH (this is the usual cause of a backend
  * that works from a terminal but fails when double-clicked).
+ *
+ * On macOS, we differentiate between ARM64 and x64 Homebrew locations:
+ * - ARM64 (Apple Silicon): /opt/homebrew/bin/python3
+ * - x64 (Intel): /usr/local/bin/python3
+ * Both can coexist via Rosetta2, so isCompatibleArchitecture() filters mismatches.
  */
 function pythonCandidates() {
   const home = process.env.HOME || process.env.USERPROFILE || '';
@@ -129,20 +175,24 @@ function pythonCandidates() {
   const abs = [
     '/usr/bin/python3',
     '/usr/local/bin/python3',
-    '/opt/homebrew/bin/python3',            // Apple-silicon Homebrew
+    '/opt/homebrew/bin/python3',            // Apple-silicon Homebrew (ARM64)
     '/opt/local/bin/python3',               // MacPorts
     '/Library/Frameworks/Python.framework/Versions/Current/bin/python3',
   ];
   // python.org framework installs (versioned)
   for (const v of ['3.12', '3.11', '3.10', '3.9']) {
     abs.push('/Library/Frameworks/Python.framework/Versions/' + v + '/bin/python3');
-    abs.push('/usr/local/bin/python' + v);
-    abs.push('/opt/homebrew/bin/python' + v);
+    abs.push('/usr/local/bin/python' + v);          // Intel Homebrew or python.org
+    abs.push('/opt/homebrew/bin/python' + v);       // ARM64 Homebrew
   }
   if (home) {
     abs.push(path.join(home, '.pyenv', 'shims', 'python3'));
     abs.push(path.join(home, 'anaconda3', 'bin', 'python3'));
     abs.push(path.join(home, 'miniconda3', 'bin', 'python3'));
+    // On ARM64 Macs with Conda, also check the aarch64-specific symlink
+    if (process.platform === 'darwin' && process.arch === 'arm64') {
+      abs.push(path.join(home, 'miniforge3', 'bin', 'python3'));
+    }
   }
   return list.concat(abs);
 }
