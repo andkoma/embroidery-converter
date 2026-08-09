@@ -194,8 +194,16 @@ async function addFileObjectsToNode(nodeId, files) {
   const existing = new Set(node.files.map(f => f.path));
   files.forEach(f => {
     if (existing.has(f.path)) return;
-    node.files.push({ path: f.path, name: f.name || tail(f.path), ext: f.ext || (tail(f.path).split('.').pop() || '').toLowerCase(),
-                      mtime: f.mtime, size: f.size, tags: Array.isArray(f.tags) ? f.tags : [], category: f.category || '' });
+    const obj = { path: f.path, name: f.name || tail(f.path), ext: f.ext || (tail(f.path).split('.').pop() || '').toLowerCase(),
+                      mtime: f.mtime, size: f.size, tags: Array.isArray(f.tags) ? f.tags : [], category: f.category || '' };
+    // Motif entries (from Gallery) keep their contained stitch files and documents
+    // so the collection only shows the entry level but can still open the files.
+    if (f.kind === 'motif') {
+      obj.kind = 'motif';
+      obj.files = Array.isArray(f.files) ? f.files : [];
+      obj.docs = Array.isArray(f.docs) ? f.docs : [];
+    }
+    node.files.push(obj);
   });
   await persist();
   renderTree(); renderFiles();
@@ -422,9 +430,30 @@ function renderFiles() {
 
   grid.innerHTML = files.map(f => {
     const sel = _selectedFiles.has(f.path);
-    const preview = f.preview ? renderPreview(f.preview) : `<span class="cl-thumb-ph">${esc((f.ext || '').toUpperCase())}</span>`;
     const cat = f.category ? `<span class="cl-cat">${esc(f.category)}</span>` : '';
     const tags = (f.tags || []).map(tg => `<span class="cl-tag">${esc(tg)}<button class="cl-tag-x" data-rmtag="${esc(tg)}" data-path="${esc(f.path)}">×</button></span>`).join('');
+    if (f.kind === 'motif') {
+      // Entry-level motif card: folder icon, contained-design count, optional docs badge, "open" action.
+      const designCount = Array.isArray(f.files) ? f.files.length : 0;
+      const hasDocs = Array.isArray(f.docs) && f.docs.length > 0;
+      const preview = f.preview
+        ? renderPreview(f.preview)
+        : `<span class="cl-thumb-ph cl-motif-ph">📁</span>`;
+      const docBadge = hasDocs ? `<span class="cl-motif-doc" title="${esc(t('gallery.hasDocs'))}">📄</span>` : '';
+      return `
+      <div class="cl-card cl-motif ${sel ? 'sel' : ''}" data-path="${esc(f.path)}" data-motif="1">
+        <input type="checkbox" class="cl-card-check" data-path="${esc(f.path)}" ${sel ? 'checked' : ''}/>
+        <button class="cl-card-remove" data-remove="${esc(f.path)}" title="${esc(t('collections.removeFromCollection'))}">×</button>
+        ${docBadge}
+        <div class="cl-thumb">${preview}</div>
+        <div class="cl-card-name" title="${esc(f.name)}">${esc(f.name)}</div>
+        <div class="cl-motif-count">${esc(t('gallery.designCount', { n: designCount }))}</div>
+        ${cat}
+        <div class="cl-card-tags">${tags}<button class="cl-add-tag" data-addtag="${esc(f.path)}">+ ${esc(t('collections.addTag'))}</button></div>
+        <button class="cl-motif-open" data-open-motif="${esc(f.path)}">${esc(t('collections.openMotif'))}</button>
+      </div>`;
+    }
+    const preview = f.preview ? renderPreview(f.preview) : `<span class="cl-thumb-ph">${esc((f.ext || '').toUpperCase())}</span>`;
     return `
     <div class="cl-card ${sel ? 'sel' : ''}" data-path="${esc(f.path)}">
       <input type="checkbox" class="cl-card-check" data-path="${esc(f.path)}" ${sel ? 'checked' : ''}/>
@@ -539,20 +568,131 @@ function wireFiles() {
     input.addEventListener('blur', () => { if (input.value.trim()) commit(); else renderFiles(); }, { once: true });
     input.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') input.blur(); if (ev.key === 'Escape') renderFiles(); });
   }, { signal: sig }));
+  document.querySelectorAll('[data-open-motif]').forEach(b => b.addEventListener('click', (e) => {
+    e.stopPropagation(); openMotifModal(b.dataset.openMotif);
+  }, { signal: sig }));
   document.querySelectorAll('.cl-card').forEach(card => card.addEventListener('click', (e) => {
     if (e.target.closest('input') || e.target.closest('button')) return;
+    if (card.dataset.motif === '1') { openMotifModal(card.dataset.path); return; }
     renderInspector(card.dataset.path);
   }, { signal: sig }));
 }
 
 /* ------------------------------------------------------------------ *
+ *  Motif modal — opening the files contained in a motif entry
+ * ------------------------------------------------------------------ */
+function motifByPath(path) {
+  const node = byId(_selectedId);
+  return node ? node.files.find(f => f.kind === 'motif' && f.path === path) : null;
+}
+
+function openMotifModal(path) {
+  const m = motifByPath(path);
+  if (!m) return;
+  let overlay = document.getElementById('cl-motif-modal');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'cl-motif-modal';
+    overlay.className = 'cl-modal-overlay';
+    document.body.appendChild(overlay);
+  }
+  const stitchRows = (m.files || []).map(f => {
+    const ext = (f.ext || (tail(f.path).split('.').pop() || '')).toLowerCase();
+    return `
+    <div class="cl-mm-row" data-file="${esc(f.path)}">
+      <span class="cl-mm-ext">${esc(ext.toUpperCase())}</span>
+      <span class="cl-mm-name" title="${esc(f.path)}">${esc(f.name || tail(f.path))}</span>
+      <span class="cl-mm-actions">
+        <button data-mm-act="convert" data-path="${esc(f.path)}">${esc(t('gallery.detail.convert'))}</button>
+        <button data-mm-act="simulator" data-path="${esc(f.path)}">${esc(t('gallery.detail.simulator'))}</button>
+        <button data-mm-act="transfer" data-path="${esc(f.path)}">${esc(t('gallery.sendToTransfer'))}</button>
+        <button data-mm-act="external" data-path="${esc(f.path)}">${esc(t('gallery.openExternal'))}</button>
+      </span>
+    </div>`;
+  }).join('') || `<div class="cl-mm-empty">${esc(t('collections.emptyFiles'))}</div>`;
+  const docRows = (m.docs || []).map(f => {
+    const ext = (f.ext || (tail(f.path).split('.').pop() || '')).toLowerCase();
+    const icon = ext === 'pdf' ? '📕' : '📘';
+    return `
+    <div class="cl-mm-row" data-file="${esc(f.path)}">
+      <span class="cl-mm-ext">${icon}</span>
+      <span class="cl-mm-name" title="${esc(f.path)}">${esc(f.name || tail(f.path))}</span>
+      <span class="cl-mm-actions">
+        <button data-mm-act="external" data-path="${esc(f.path)}">${esc(t('gallery.openExternal'))}</button>
+      </span>
+    </div>`;
+  }).join('');
+  const docsBlock = (m.docs && m.docs.length)
+    ? `<div class="cl-mm-section-title">${esc(t('gallery.documents'))}</div>${docRows}`
+    : '';
+  overlay.innerHTML = `
+    <div class="cl-modal cl-motif-modal-box">
+      <div class="cl-modal-head">
+        <span class="cl-modal-title">📁 ${esc(m.name)}</span>
+        <button class="cl-modal-close" id="cl-mm-close">×</button>
+      </div>
+      <div class="cl-modal-body">
+        <div class="cl-mm-section-title">${esc(t('gallery.designs'))}</div>
+        ${stitchRows}
+        ${docsBlock}
+      </div>
+    </div>`;
+  overlay.style.display = 'flex';
+  const sig = _abort.signal;
+  document.getElementById('cl-mm-close')?.addEventListener('click', closeMotifModal, { signal: sig });
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeMotifModal(); }, { signal: sig });
+  overlay.querySelectorAll('[data-mm-act]').forEach(b => b.addEventListener('click', () => {
+    motifFileAction(b.dataset.mmAct, b.dataset.path);
+  }, { signal: sig }));
+}
+
+function closeMotifModal() {
+  const overlay = document.getElementById('cl-motif-modal');
+  if (overlay) overlay.style.display = 'none';
+}
+
+function motifFileAction(act, path) {
+  const name = tail(path);
+  const ext = (name.split('.').pop() || '').toLowerCase();
+  if (act === 'external') {
+    window.api.openPath?.(path);
+    return;
+  }
+  if (act === 'transfer') {
+    window.store.set('transferQueue', [{ path, name, ext }]);
+    closeMotifModal();
+    if (window.router) window.router.load('transfer');
+    return;
+  }
+  if (act === 'convert') {
+    window.store.set('filesQueue', [path]);   // Files view expects an array of path strings
+    closeMotifModal();
+    if (window.router) window.router.load('files');
+    return;
+  }
+  if (act === 'simulator') {
+    window.store.set('simulatorQueue', path);  // Simulator expects a single path string
+    closeMotifModal();
+    if (window.router) window.router.load('simulator');
+    return;
+  }
+}
+
+/* ------------------------------------------------------------------ *
  *  Thumbnails
  * ------------------------------------------------------------------ */
+// For motif entries the card path is a folder, so use the first contained
+// stitch file as the thumbnail source; plain files use their own path.
+function thumbTargetPath(f) {
+  if (f.kind === 'motif') return (Array.isArray(f.files) && f.files[0]) ? f.files[0].path : null;
+  return f.path;
+}
+
 async function loadThumbnails() {
-  const files = currentFiles().filter(f => !f.preview && !f._thumbTried);
+  const files = currentFiles().filter(f => !f.preview && !f._thumbTried && thumbTargetPath(f));
   if (!files.length) return;
-  const items = files.map(f => ({ path: f.path, mtime: f.mtime || 0 }));
-  const byPath = new Map(currentFiles().map(f => [f.path, f]));
+  const items = files.map(f => ({ path: thumbTargetPath(f), mtime: f.mtime || 0 }));
+  const byPath = new Map(currentFiles().filter(f => thumbTargetPath(f)).map(f => [thumbTargetPath(f), f]));
   try {
     _thumbReq = await window.api.getThumbsCached(items, (entry) => {
       if (entry.type === 'thumb') {
@@ -857,6 +997,32 @@ function injectCSS() {
 .cl-inspect-meta td:last-child { text-align:right; font-weight:600; }
 .cl-inspect-tags-label { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--muted,#8a90a0); margin-bottom:8px; }
 .cl-inspect-tags { display:flex; flex-wrap:wrap; gap:5px; }
+
+/* Motif entry cards */
+.cl-card.cl-motif { border-color:#d7cef7; }
+.cl-card.cl-motif:hover { box-shadow:0 3px 12px rgba(124,92,255,.18); }
+.cl-motif-ph { font-size:34px; }
+.cl-motif-doc { position:absolute; top:8px; right:30px; font-size:14px; z-index:2; }
+.cl-motif-count { font-size:11px; color:var(--muted,#8a90a0); }
+.cl-motif-open { border:1px solid #7c5cff; background:#f2effe; color:#5b3fd6; border-radius:8px; font-size:11.5px; font-weight:600; padding:4px 8px; cursor:pointer; margin-top:2px; }
+.cl-motif-open:hover { background:#7c5cff; color:#fff; }
+
+/* Motif modal */
+.cl-modal-overlay { position:fixed; inset:0; background:rgba(30,25,55,.42); display:none; align-items:center; justify-content:center; z-index:1000; }
+.cl-modal { background:var(--panel-bg,#fff); border-radius:12px; width:min(640px,92vw); max-height:86vh; display:flex; flex-direction:column; box-shadow:0 12px 48px rgba(40,30,90,.28); overflow:hidden; }
+.cl-modal-head { display:flex; align-items:center; justify-content:space-between; padding:14px 18px; border-bottom:1px solid var(--border,#e2e5ee); }
+.cl-modal-title { font-size:15px; font-weight:700; }
+.cl-modal-close { border:none; background:none; font-size:22px; line-height:1; color:var(--muted,#8a90a0); cursor:pointer; }
+.cl-modal-close:hover { color:#d64545; }
+.cl-modal-body { padding:14px 18px; overflow-y:auto; }
+.cl-mm-section-title { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--muted,#8a90a0); margin:6px 0 8px; }
+.cl-mm-row { display:flex; align-items:center; gap:10px; padding:7px 0; border-bottom:1px solid var(--border,#eef0f4); }
+.cl-mm-ext { flex:0 0 auto; min-width:44px; font-size:11px; font-weight:700; color:#5b3fd6; background:#ece9fb; padding:2px 6px; border-radius:6px; text-align:center; }
+.cl-mm-name { flex:1 1 auto; font-size:12.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.cl-mm-actions { flex:0 0 auto; display:flex; gap:5px; flex-wrap:wrap; }
+.cl-mm-actions button { border:1px solid var(--border,#dde0ea); background:var(--surface,#f6f7fb); border-radius:7px; font-size:11px; padding:3px 8px; cursor:pointer; color:var(--fg,#4a4f5c); }
+.cl-mm-actions button:hover { border-color:#7c5cff; color:#7c5cff; }
+.cl-mm-empty { color:var(--muted,#8a90a0); font-size:12px; padding:8px 0; }
 `;
   document.head.appendChild(style);
 }
