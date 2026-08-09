@@ -33,7 +33,7 @@ The issue was in **`package.json` build configuration**:
 
 ```json
 // ✅ CORRECT
-"afterSign": "scripts/afterSign.js",    // ← Hook enabled, right timing
+"afterSign": "scripts/afterSign.js",    // ← Global hook, script checks platform
 "mac": {
   "target": ["dmg"],
   "hardenedRuntime": true,              // ← Runtime security enabled
@@ -45,9 +45,10 @@ The issue was in **`package.json` build configuration**:
 ```
 
 **Key Changes:**
-- `afterSign` → active hook for post-signing entitlements
+- `afterSign` on **global level** (electron-builder schema requirement)
 - `hardenedRuntime: true` → enables runtime security features
 - `signingIdentity: "-"` → explicitly enables ad-hoc signing
+- Script itself checks `process.platform !== 'darwin'` and skips on other platforms
 
 ### 2. Enhanced `scripts/afterSign.js`
 

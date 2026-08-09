@@ -76,10 +76,13 @@ check(pkg.build && typeof pkg.build === 'object',
       'Build configuration exists');
 
 if (pkg.build) {
-  // afterSign should NOT be global
-  check(!pkg.build.hasOwnProperty('afterSign') || pkg.build.afterSign === null, 
-        'afterSign is NOT on global level (should be in mac section only)',
-        true);
+  // afterSign MUST be global (electron-builder schema requirement)
+  check(pkg.build.afterSign === 'scripts/afterSign.js', 
+        'afterSign: "scripts/afterSign.js" (on global level)', true);
+
+  // afterSign should NOT be in mac section
+  check(!pkg.build.mac?.afterSign, 
+        'afterSign is NOT in mac section (global hook with platform check)', true);
 
   // mac section exists
   check(pkg.build.mac && typeof pkg.build.mac === 'object', 
@@ -98,10 +101,6 @@ if (pkg.build) {
     
     check(typeof pkg.build.mac.entitlementsInherit === 'string', 
           `entitlementsInherit specified: ${pkg.build.mac.entitlementsInherit || 'MISSING'}`);
-    
-    // afterSign should be in mac section
-    check(pkg.build.mac.afterSign === 'scripts/afterSign.js', 
-          'afterSign: "scripts/afterSign.js" (in mac section)', true);
   }
 
   // Windows section exists
