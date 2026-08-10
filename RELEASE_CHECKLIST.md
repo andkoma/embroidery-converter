@@ -326,4 +326,4 @@ open <app.dmg>
 ---
 
 **Last Updated:** 2026-08-09
-**Release Version:** v1.2.47
+**Release Version:** v1.3.1
