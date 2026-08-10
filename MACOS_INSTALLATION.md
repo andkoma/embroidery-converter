@@ -71,10 +71,13 @@ open /Applications/Embroidery\ Converter.app
 
 ### ⚠️ Meldung "nicht verifizierter Entwickler" / "kann nicht geöffnet werden"
 
-Die App ist **nicht mit einem Apple Developer ID Zertifikat signiert** (das
-kostet 99 $/Jahr). Deshalb zeigt macOS beim ersten Start eine Warnung, dass
-der Entwickler nicht verifiziert werden konnte. Das ist normal und kein Fehler
-- Sie können den Start manuell erlauben:
+Die App ist **nicht mit einem Apple Developer ID Zertifikat signiert** (das kostet 99 $/Jahr). Deshalb zeigt macOS beim ersten Start eine Warnung, dass der Entwickler nicht verifiziert werden konnte. Das ist normal und kein Fehler - Sie können den Start manuell erlauben.
+
+👉 **[SCHNELL-LÖSUNG: Siehe Gatekeeper Workaround Guide](./GATEKEEPER_WORKAROUND.md)** (mit Terminal-Befehl zum schnellen Beheben)
+
+---
+
+**Manuelle Alternativen (falls der Befehl nicht funktioniert):**
 
 **Variante 1 (empfohlen): Rechtsklick öffnen**
 
@@ -95,8 +98,10 @@ der Entwickler nicht verifiziert werden konnte. Das ist normal und kein Fehler
 **Variante 3: Terminal (entfernt die Quarantäne-Markierung komplett)**
 
 ```bash
-xattr -cr /Applications/Embroidery\ Converter.app
+/usr/bin/xattr -cr /Applications/Embroidery\ Converter.app
 ```
+
+**Hinweis:** Dies ist die gleiche Lösung wie im **[Gatekeeper Workaround Guide](./GATEKEEPER_WORKAROUND.md)** dokumentiert.
 
 Sollte stattdessen die Meldung **"beschädigt deinen Computer"** erscheinen
 (statt der oben beschriebenen harmlosen Warnung), deutet das auf eine

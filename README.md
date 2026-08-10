@@ -21,6 +21,8 @@ supports 80+ embroidery formats.
 
 👉 **[See all versions & detailed instructions](./DOWNLOADS.md)**
 
+⚠️ **Problems on macOS?** → [Gatekeeper Workaround Guide](./GATEKEEPER_WORKAROUND.md) for easy fixes (Terminal 1-liner included)
+
 ---
 
 ## 📖 About This Project
